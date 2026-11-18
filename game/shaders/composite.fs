@@ -20,7 +20,7 @@ void main() {
     vec2 uv = gl_FragCoord.xy / resolution;
     vec2 d = uv - 0.5;
     d.x *= resolution.x / resolution.y;
-    c *= 1.0 - vignette * smoothstep(0.35, 1.1, length(d));
+    c *= 1.0 - vignette * smoothstep(0.55, 1.25, length(d));
 
     float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     c += (n - 0.5) / 255.0;

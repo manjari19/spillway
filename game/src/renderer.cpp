@@ -8,7 +8,25 @@
 #include "assets.h"
 #include "theme.h"
 
+extern "C" {
+struct GLFWwindow;
+GLFWwindow* glfwGetCurrentContext(void);
+void glfwGetFramebufferSize(GLFWwindow* window, int* width, int* height);
+}
+
 namespace {
+
+// The real framebuffer size in physical pixels. raylib caches this and the
+// cache can go stale when macOS adjusts the window at creation, so ask GLFW.
+void framebufferSize(int& w, int& h) {
+    w = GetRenderWidth();
+    h = GetRenderHeight();
+    if (GLFWwindow* win = glfwGetCurrentContext()) {
+        int fw = 0, fh = 0;
+        glfwGetFramebufferSize(win, &fw, &fh);
+        if (fw > 0 && fh > 0) { w = fw; h = fh; }
+    }
+}
 
 // Render target with a 16-bit float colour buffer. The water field is a sum
 // of many overlapping blobs, which would saturate an 8-bit target.
@@ -69,8 +87,12 @@ void Renderer::freeTargets() {
 void Renderer::unload() { freeTargets(); }
 
 void Renderer::ensureSize() {
-    const int rw = std::max(1, GetRenderWidth()), rh = std::max(1, GetRenderHeight());
-    dpi_ = uiDpi();
+    int rw = 1, rh = 1;
+    framebufferSize(rw, rh);
+    rw = std::max(1, rw);
+    rh = std::max(1, rh);
+    dpi_ = static_cast<float>(rw) / static_cast<float>(std::max(1, GetScreenWidth()));
+    setUiDpi(dpi_);
     if (rw == rw_ && rh == rh_ && scene_.id) return;
     freeTargets();
     rw_ = rw;
@@ -148,7 +170,7 @@ void Renderer::endWorld(bool wantBackdrop) {
     // Composite into the frame.
     BeginTextureMode(frame_);
     BeginShaderMode(as.composite);
-    const float strength = 0.85f, vignette = 0.55f;
+    const float strength = 0.8f, vignette = 0.28f;
     const float res[2] = {static_cast<float>(rw_), static_cast<float>(rh_)};
     SetShaderValue(as.composite, as.compositeStrength, &strength, SHADER_UNIFORM_FLOAT);
     SetShaderValue(as.composite, as.compositeVignette, &vignette, SHADER_UNIFORM_FLOAT);
@@ -179,8 +201,19 @@ void Renderer::captureSnapshot() { blit(frame_.texture, snapshot_, nullptr); }
 
 void Renderer::present(float previousSceneAlpha) {
     BeginDrawing();
-    ClearBackground(BLACK);
-    const Rectangle dst{0, 0, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())};
+    // Present in physical pixels with our own viewport, matching the real
+    // framebuffer exactly (see framebufferSize).
+    rlDrawRenderBatchActive();
+    rlViewport(0, 0, rw_, rh_);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlOrtho(0, rw_, rh_, 0, 0.0, 1.0);
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
+    // Anything not covered by the frame gets the background colour, never a
+    // hard black band.
+    ClearBackground(theme::bgTop);
+    const Rectangle dst{0, 0, static_cast<float>(rw_), static_cast<float>(rh_)};
     // The frame is opaque: copy it without blending.
     rlSetBlendFactors(RL_ONE, RL_ZERO, RL_FUNC_ADD);
     BeginBlendMode(BLEND_CUSTOM);
@@ -195,13 +228,16 @@ void Renderer::present(float previousSceneAlpha) {
 
 void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const spillway::Vec2> vel, const View& view) {
     Assets& as = assets();
-    // 1. Splat a soft blob per particle into the float field target:
-    //    R += weight, G += weight * speed (so the shader can average speed).
+    // 1. Splat one smooth kernel per particle into the float field target.
+    //    The kernel radius is ~2.5x the particle spacing (0.135 m), so every
+    //    pixel inside the water sums many overlapping kernels and the field
+    //    is smooth: no visible individual particles.
     unbindLayer(true);
     bindLayer(blob_, true);
     ClearBackground(BLANK);
-    blendAdditive();
-    const float radius = 0.16f * view.scale; // logical px
+    BeginBlendMode(BLEND_ADD_COLORS);
+    BeginShaderMode(as.blobSplat);
+    const float radius = kWaterKernelRadius * view.scale; // logical px
     const Rectangle src{0, 0, static_cast<float>(as.blob.width), static_cast<float>(as.blob.height)};
     for (size_t i = 0; i < pos.size(); ++i) {
         const Vector2 c = view.toScreen(pos[i]);
@@ -209,15 +245,20 @@ void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const sp
         const Color tint{255, static_cast<unsigned char>(std::lround(speed * 255.0f)), 0, 255};
         DrawTexturePro(as.blob, src, {c.x - radius, c.y - radius, 2 * radius, 2 * radius}, {0, 0}, 0.0f, tint);
     }
+    EndShaderMode();
+    EndBlendMode();
     unbindLayer(true);
 
-    // 2. Threshold the field into a surface, composited over the scene.
+    // 2. Threshold the field into one surface, composited over the scene.
     bindLayer(scene_, true);
     WaterShader& ws = as.water;
-    const float threshold = 0.5f, rim = 2.2f * dpi_, rh = static_cast<float>(rh_);
+    const float texel[2] = {1.0f / static_cast<float>(rw_), 1.0f / static_cast<float>(rh_)};
+    const float threshold = kWaterThreshold, rim = 1.6f * dpi_, t = static_cast<float>(GetTime());
+    SetShaderValue(ws.shader, ws.texel, texel, SHADER_UNIFORM_VEC2);
     SetShaderValue(ws.shader, ws.threshold, &threshold, SHADER_UNIFORM_FLOAT);
     SetShaderValue(ws.shader, ws.rimPx, &rim, SHADER_UNIFORM_FLOAT);
-    SetShaderValue(ws.shader, ws.renderHeight, &rh, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(ws.shader, ws.dpi, &dpi_, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(ws.shader, ws.time, &t, SHADER_UNIFORM_FLOAT);
     setVec3(ws.shader, ws.slowColor, theme::waterSlow);
     setVec3(ws.shader, ws.fastColor, theme::waterFast);
     BeginShaderMode(ws.shader);

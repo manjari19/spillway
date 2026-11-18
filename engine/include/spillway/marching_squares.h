@@ -3,8 +3,12 @@
 // Turns the blocky terrain grid into smooth filled outlines for rendering.
 //
 // 1. Smooth field: for each material, every cell centre gets a value in
-//    [0, 1] = blurred occupancy (3x3 binomial kernel 1-2-1). Hard cell edges
-//    become ramps, so the 0.5 contour is rounded instead of stair-stepped.
+//    [0, 1] = blurred occupancy (5x5 binomial kernel 1-4-6-4-1). Hard cell
+//    edges become ramps, so the 0.5 contour is rounded instead of
+//    stair-stepped. The kernel is symmetric, so a straight edge still lands
+//    exactly on the true cell boundary. Gaps narrower than ~2 cells close
+//    up visually, which matches physics: water (0.1 m wide particles) cannot
+//    pass a 1-cell (0.075 m) gap either.
 // 2. Marching squares: the grid of cell centres is split into squares. For
 //    each square, the corners at or above 0.5 are "inside". Walking the four
 //    corners in order and inserting a point wherever an edge crosses 0.5
@@ -39,6 +43,10 @@ public:
     // Re-meshes chunks touched by edits since the last call. Returns how many
     // chunks were rebuilt.
     int update(const Terrain& terrain);
+    // Same, for an explicit dirty cell rectangle (caller took it from the terrain).
+    int updateRect(const Terrain& terrain, CellRect dirty);
+    // Cells whose field() value can change when the cells in `dirty` change.
+    static CellRect fieldFootprint(const Terrain& terrain, CellRect dirty);
 
     int chunksX() const { return chunksX_; }
     int chunksY() const { return chunksY_; }
@@ -56,6 +64,9 @@ public:
     // Smoothed occupancy of `material` at cell centre (x, y), in [0, 1].
     // Coordinates outside the grid are clamped to the nearest edge cell.
     static float field(const Terrain& terrain, Cell material, int x, int y);
+    // Smoothed occupancy of any solid material (sum over materials).
+    static float solidField(const Terrain& terrain, int x, int y);
+    static constexpr int kBlurRadius = 2;
 
     // Marching squares over squares [sx0, sx1] x [sy0, sy1]. Square (sx, sy)
     // spans cell centres sx..sx+1 and sy..sy+1; sx ranges from -1 to width-1

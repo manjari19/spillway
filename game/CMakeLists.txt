@@ -15,8 +15,12 @@ if(APPLE)
   target_link_libraries(spillway PRIVATE "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 endif()
 
-# Ship levels, shaders and fonts next to the executable.
-add_custom_command(TARGET spillway POST_BUILD
+# Ship levels, shaders and fonts next to the executable. This is a separate
+# target that runs on every build, so editing only a shader or a level file
+# still gets copied (a POST_BUILD step would only run when the exe relinks).
+add_custom_target(spillway_assets ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/levels $<TARGET_FILE_DIR:spillway>/levels
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:spillway>/shaders
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:spillway>/assets)
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:spillway>/assets
+  COMMENT "Copying Spillway assets")
+add_dependencies(spillway spillway_assets)

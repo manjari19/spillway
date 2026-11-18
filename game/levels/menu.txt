@@ -1,14 +1,14 @@
-# Backdrop for the main menu: a wide basin of water that sloshes gently.
-# Not a playable level (no drain).
+# Backdrop for the main menu. The text column on the left sits over open
+# sky and a low plateau; a dirt ridge keeps the water in a basin on the right
+# half, where it sloshes as gravity sways. Not a playable level (no drain).
 
 name  Menu
 size  16 9
 win   100
 
-dirt  poly 0 9  0 5.2  1.6 5.5  3.4 6.4  5.4 7.4  7.6 7.95  10 8.05  12.4 7.7  14.3 6.9  16 5.9  16 9
-rock  circle 2.6 6.6 0.75
-rock  circle 13.6 7.7 0.55
-rock  circle 8.8 8.5 0.6
+dirt  poly 0 9  0 7.2  3.8 7.3  5.0 6.6  6.0 5.3  6.8 4.8  7.5 5.2  8.5 6.8  10 7.8  12 8.1  14 7.5  15.2 6.3  16 5.0  16 9
+rock  circle 6.7 5.6 0.5
+rock  circle 11.6 8.5 0.5
 rock  rect 0 8.75 16 9
 
-water rect 5.0 2.6 15.6 7.9
+water rect 7.9 5.7 15.8 8.2

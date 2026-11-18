@@ -11,12 +11,17 @@ enum class FontRole { Regular = 0, Medium, SemiBold, Mono, Count };
 
 struct WaterShader {
     Shader shader{};
-    int threshold, rimPx, slowColor, fastColor, renderHeight;
+    int texel, threshold, rimPx, dpi, time, slowColor, fastColor;
+};
+struct GlowShader {
+    Shader shader{};
+    int quadSize, halfSize, radius, softness, inside;
 };
 struct TerrainShader {
     Shader shader{};
-    int sdf, sdfSize, cellSize, texel, renderHeight, dpi, viewOffset, viewScale;
-    int dirtColor, dirtTopColor, rockColor, rockEdgeColor, wallColor;
+    int sdf, sdfSize, field, fieldSize, waterField, dugTime, cellSize, levelSize, texel, renderHeight, dpi, viewOffset,
+        viewScale, time;
+    int strataA, strataB, strataC, rimColor, waterTint, rockBody, rockEdge, rockEdgeAlt, wallColor;
 };
 
 class Assets {
@@ -30,6 +35,8 @@ public:
     const Font& font(FontRole role, float physicalSize) const;
 
     WaterShader water;
+    GlowShader glow;
+    Shader blobSplat{};
     TerrainShader terrain;
     Shader bright{}, blur{}, composite{};
     int brightThreshold = -1, brightKnee = -1, blurDirection = -1;
@@ -52,5 +59,6 @@ Assets& assets();
 
 // --- text, drawn in logical coordinates ---
 float uiDpi(); // physical pixels per logical pixel
+void setUiDpi(float dpi);
 Vector2 measureText(FontRole role, const std::string& text, float size, float tracking = 0.0f);
 void drawText(FontRole role, const std::string& text, Vector2 pos, float size, Color color, float tracking = 0.0f);

@@ -216,11 +216,25 @@ Terrain buildTerrain(const LevelDesc& level) {
     const int w = static_cast<int>(std::ceil(level.size.x / level.cellSize - 1e-4f));
     const int h = static_cast<int>(std::ceil(level.size.y / level.cellSize - 1e-4f));
     Terrain terrain(w, h, level.cellSize);
+
+    // Circles are snapped so their centre sits on a cell centre (moves them
+    // by at most half a cell). A disc centred on a cell boundary has only
+    // even row widths, which gives long flat runs (it reads as an octagon);
+    // centred on a cell it is symmetric with short flats and rasterises
+    // much rounder. Collision and visuals both use this same disc.
+    std::vector<TerrainOp> ops = level.terrain;
+    const float c = level.cellSize;
+    for (TerrainOp& op : ops) {
+        if (op.shape.kind != Shape::Kind::Circle) continue;
+        Vec2& p = op.shape.points[0];
+        p = {(std::floor(p.x / c) + 0.5f) * c, (std::floor(p.y / c) + 0.5f) * c};
+    }
+
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            const Vec2 c = terrain.cellCentre(x, y);
-            for (auto it = level.terrain.rbegin(); it != level.terrain.rend(); ++it) {
-                if (it->shape.contains(c)) { terrain.set(x, y, it->material); break; }
+            const Vec2 centre = terrain.cellCentre(x, y);
+            for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+                if (it->shape.contains(centre)) { terrain.set(x, y, it->material); break; }
             }
         }
     }

@@ -37,15 +37,25 @@ TEST_CASE("Marching squares: a square block keeps its area with rounded corners"
     m.build(t);
     const float a = m.area(kDirt);
     // Straight edges sit exactly on the cell boundary; only the corners get
-    // trimmed, so the area is slightly under 1 m^2.
+    // rounded off, so the area is slightly under 1 m^2.
     CHECK(a < 1.0f);
-    CHECK(a > 0.97f);
+    CHECK(a > 0.95f);
 
     // The outline of a straight edge lies on the true cell boundary: the
-    // field is 0.75 just inside and 0.25 just outside, so the 0.5 crossing is
-    // exactly halfway between the two cell centres.
-    CHECK(TerrainMesher::field(t, Cell::Dirt, 10, 15) == Approx(0.75f));
-    CHECK(TerrainMesher::field(t, Cell::Dirt, 9, 15) == Approx(0.25f));
+    // field is 11/16 just inside and 5/16 just outside, symmetric about 0.5,
+    // so the 0.5 crossing is exactly halfway between the two cell centres.
+    CHECK(TerrainMesher::field(t, Cell::Dirt, 10, 15) == Approx(11.0f / 16.0f));
+    CHECK(TerrainMesher::field(t, Cell::Dirt, 9, 15) == Approx(5.0f / 16.0f));
+}
+
+TEST_CASE("Marching squares: small features are never hidden", "[marching]") {
+    // Collision uses exact cells, so even one solid cell must be drawn.
+    Terrain t(20, 20, 0.1f);
+    t.set(10, 10, Cell::Dirt);
+    TerrainMesher m;
+    m.build(t);
+    CHECK(m.area(kDirt) > 0.0f);
+    CHECK(m.area(kDirt) < 0.01f);
 }
 
 TEST_CASE("Marching squares: a rasterised circle has close to the right area", "[marching]") {

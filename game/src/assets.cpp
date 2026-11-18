@@ -66,27 +66,48 @@ bool Assets::load(std::string& error) {
 
     // Shaders
     if (!loadShader("water.fs", water.shader, error)) return false;
+    water.texel = GetShaderLocation(water.shader, "texel");
     water.threshold = GetShaderLocation(water.shader, "threshold");
     water.rimPx = GetShaderLocation(water.shader, "rimPx");
+    water.dpi = GetShaderLocation(water.shader, "dpi");
+    water.time = GetShaderLocation(water.shader, "time");
     water.slowColor = GetShaderLocation(water.shader, "slowColor");
     water.fastColor = GetShaderLocation(water.shader, "fastColor");
-    water.renderHeight = GetShaderLocation(water.shader, "renderHeight");
+
+    if (!loadShader("blob.fs", blobSplat, error)) return false;
+    if (!loadShader("glow.fs", glow.shader, error)) return false;
+    glow.quadSize = GetShaderLocation(glow.shader, "quadSize");
+    glow.halfSize = GetShaderLocation(glow.shader, "halfSize");
+    glow.radius = GetShaderLocation(glow.shader, "radius");
+    glow.softness = GetShaderLocation(glow.shader, "softness");
+    glow.inside = GetShaderLocation(glow.shader, "inside");
 
     if (!loadShader("terrain.fs", terrain.shader, error)) return false;
     Shader& t = terrain.shader;
-    terrain.sdf = GetShaderLocation(t, "sdf");
-    terrain.sdfSize = GetShaderLocation(t, "sdfSize");
-    terrain.cellSize = GetShaderLocation(t, "cellSize");
-    terrain.texel = GetShaderLocation(t, "texel");
-    terrain.renderHeight = GetShaderLocation(t, "renderHeight");
-    terrain.dpi = GetShaderLocation(t, "dpi");
-    terrain.viewOffset = GetShaderLocation(t, "viewOffset");
-    terrain.viewScale = GetShaderLocation(t, "viewScale");
-    terrain.dirtColor = GetShaderLocation(t, "dirtColor");
-    terrain.dirtTopColor = GetShaderLocation(t, "dirtTopColor");
-    terrain.rockColor = GetShaderLocation(t, "rockColor");
-    terrain.rockEdgeColor = GetShaderLocation(t, "rockEdgeColor");
-    terrain.wallColor = GetShaderLocation(t, "wallColor");
+    auto loc = [&](const char* name) { return GetShaderLocation(t, name); };
+    terrain.sdf = loc("sdf");
+    terrain.sdfSize = loc("sdfSize");
+    terrain.field = loc("field");
+    terrain.fieldSize = loc("fieldSize");
+    terrain.waterField = loc("waterField");
+    terrain.dugTime = loc("dugTime");
+    terrain.cellSize = loc("cellSize");
+    terrain.levelSize = loc("levelSize");
+    terrain.texel = loc("texel");
+    terrain.renderHeight = loc("renderHeight");
+    terrain.dpi = loc("dpi");
+    terrain.viewOffset = loc("viewOffset");
+    terrain.viewScale = loc("viewScale");
+    terrain.time = loc("time");
+    terrain.strataA = loc("strataA");
+    terrain.strataB = loc("strataB");
+    terrain.strataC = loc("strataC");
+    terrain.rimColor = loc("rimColor");
+    terrain.waterTint = loc("waterTint");
+    terrain.rockBody = loc("rockBody");
+    terrain.rockEdge = loc("rockEdge");
+    terrain.rockEdgeAlt = loc("rockEdgeAlt");
+    terrain.wallColor = loc("wallColor");
 
     if (!loadShader("bright.fs", bright, error)) return false;
     brightThreshold = GetShaderLocation(bright, "threshold");
@@ -123,7 +144,7 @@ void Assets::unload() {
         for (Font& f : list) UnloadFont(f);
         list.clear();
     }
-    for (Shader* s : {&water.shader, &terrain.shader, &bright, &blur, &composite})
+    for (Shader* s : {&water.shader, &terrain.shader, &bright, &blur, &composite, &blobSplat, &glow.shader})
         if (s->id && s->id != rlGetShaderIdDefault()) UnloadShader(*s);
     if (blob.id) UnloadTexture(blob);
 }
@@ -135,10 +156,12 @@ const Font& Assets::font(FontRole role, float physicalSize) const {
     return list.back();
 }
 
-float uiDpi() {
-    const int sw = GetScreenWidth();
-    return sw > 0 ? static_cast<float>(GetRenderWidth()) / static_cast<float>(sw) : 1.0f;
+namespace {
+float gDpi = 1.0f;
 }
+// Set by the renderer from the real framebuffer each frame.
+float uiDpi() { return gDpi; }
+void setUiDpi(float dpi) { gDpi = dpi; }
 
 Vector2 measureText(FontRole role, const std::string& text, float size, float tracking) {
     const Font& f = assets().font(role, size * uiDpi());

@@ -88,6 +88,15 @@ void GameplayScene::debugAutoSolve() {
     world_->events().clear();
 }
 
+void GameplayScene::debugMidLevel() {
+    // Rim opened and a short channel started: water mid-flow down the slope.
+    for (float y = 0.8f; y <= 2.7f; y += 0.2f) world_->queueEdit({Tool::Dig, {4.9f, y}, {6.3f, y}, 0.35f});
+    world_->queueEdit({Tool::Dig, {13.6f, 5.0f}, {14.2f, 5.9f}, 0.4f});
+    for (int s = 0; s < 150; ++s) world_->step();
+    world_->events().clear();
+    time_ = 10.0f; // past the hint toast
+}
+
 void GameplayScene::handlePlayInput() {
     if (IsKeyPressed(KEY_ONE)) tool_ = Tool::Dig;
     if (IsKeyPressed(KEY_TWO)) tool_ = Tool::Wall;
@@ -131,6 +140,7 @@ void GameplayScene::spawnEffects() {
     for (const Vec2 p : e.drained) effects_.splash(p);
     for (const Vec2 p : e.lost) effects_.sink(p);
     for (const Vec2 p : e.dug) effects_.dust(p);
+    terrainView_.markDug(world_->terrain(), e.dug, static_cast<float>(GetTime()));
     e.clear();
 }
 
@@ -159,6 +169,10 @@ void GameplayScene::update(float dt) {
         mode_ = Mode::Playing;
     }
 
+    if (digDemoAt_ > 0.0f && time_ >= digDemoAt_) {
+        world_->queueEdit({Tool::Dig, {7.5f, 3.6f}, {9.5f, 4.4f}, 0.4f});
+        digDemoAt_ = -1.0f;
+    }
     if (mode_ != Mode::Paused) {
         world_->fluid().setInteraction(mode_ == Mode::Playing ? interaction_ : Interaction{});
         world_->update(dt);
@@ -262,12 +276,8 @@ void GameplayScene::drawBrush() {
 }
 
 void GameplayScene::drawWorld() {
-    // Level background: slightly lifted indigo so open space reads as "air".
-    const Vec2 ext = world_->terrain().extent();
-    const Vector2 a = view_.toScreen({0, 0});
-    DrawRectangleGradientV(static_cast<int>(a.x), static_cast<int>(a.y), static_cast<int>(ext.x * view_.scale),
-                           static_cast<int>(ext.y * view_.scale), theme::levelTop, theme::levelBottom);
-
+    // Open space uses the same full-screen background gradient as
+    // everything else, so there is no visible letterbox around the level.
     drawDrainsAndPits();
     app_.renderer().drawWater(world_->fluid().positions(), world_->fluid().velocities(), view_);
     terrainView_.draw(app_.renderer(), view_, world_->terrain());
@@ -285,7 +295,7 @@ void GameplayScene::drawWorld() {
             }
     }
 
-    if (mode_ == Mode::Playing) drawBrush();
+    if (mode_ == Mode::Playing && (IsCursorOnScreen() || forceCursor_)) drawBrush();
 }
 
 // ------------------------------------------------------------------- UI ---
@@ -309,23 +319,25 @@ void GameplayScene::drawHud() {
     const float leftEnd = bar.x + pad + std::max(capM.x, nameM.x);
 
     // Right: ink, brush size, tool icons (laid out right to left).
-    const float iconD = 38.0f * s, iconGap = 8.0f * s;
+    const float iconD = 32.0f * s, iconGap = 12.0f * s;
+    const float keySize = 10.5f * s;
+    const float keyH = measureText(FontRole::Medium, "1", keySize).y;
+    // Icon and its key number stacked: they never overlap.
+    const float iconTop = bar.y + (bar.height - (iconD + 3.0f * s + keyH)) * 0.5f;
     float x = bar.x + bar.width - pad + 6.0f * s;
     const Tool tools[] = {Tool::Erase, Tool::Wall, Tool::Dig};
     const char* keys[] = {"3", "2", "1"};
     for (int i = 0; i < 3; ++i) {
         x -= iconD;
-        const Vector2 c{x + iconD * 0.5f, bar.y + bar.height * 0.5f};
+        const Vector2 c{x + iconD * 0.5f, iconTop + iconD * 0.5f};
         const bool active = tools[i] == tool_ && !debugPush_;
         const float h = ui::animate(std::string("tool:") + keys[i], active ? 1.0f : 0.0f);
-        if (h > 0.01f) DrawCircleV(c, iconD * 0.5f + 4.0f * s * h, ease::alpha(theme::violet, 0.18f * h));
-        DrawCircleV(c, iconD * 0.5f, ease::mix(Color{255, 255, 255, 14}, Color{109, 60, 255, 210}, h));
+        const float rad = iconD * 0.5f;
+        if (h > 0.01f) ui::glow({c.x - rad, c.y - rad, iconD, iconD}, rad, 10.0f * s, ease::alpha(theme::violet, 0.5f * h), 0.0f);
+        DrawCircleV(c, rad, ease::mix(Color{255, 255, 255, 14}, Color{109, 60, 255, 220}, h));
         ui::toolIcon(tools[i], c, iconD * 0.62f, ease::mix(theme::textDim, theme::text, h));
-        // Key number badge.
-        const Vector2 kc{c.x + iconD * 0.36f, c.y - iconD * 0.36f};
-        DrawCircleV(kc, 7.5f * s, ease::mix(Color{40, 34, 72, 255}, Color{62, 232, 255, 255}, h));
-        ui::textCentered(FontRole::SemiBold, keys[i], {kc.x - 8 * s, kc.y - 8 * s, 16 * s, 16 * s}, 10.5f * s,
-                         h > 0.5f ? theme::bgBottom : theme::textDim);
+        ui::textCentered(FontRole::Medium, keys[i], {c.x - rad, c.y + rad + 3.0f * s, iconD, keyH}, keySize,
+                         ease::mix(theme::textMuted, theme::cyan, h));
         x -= iconGap;
     }
     x -= 12.0f * s;
@@ -497,10 +509,21 @@ void GameplayScene::drawResultCard() {
     std::vector<std::string> buttons{"Retry"};
     if (hasNext) buttons.push_back("Next");
     buttons.push_back("Menu");
-    const float btnH = 48.0f * s, btnGap = 10.0f * s;
+    const float btnH = 48.0f * s, btnGap = 20.0f * s;
+    // Tell the player what the next star needs.
+    std::string starHint;
+    if (won && stars_ < 3) {
+        const bool thrifty = world_->inkBudget() <= 0 || world_->inkUsed() * 2 <= world_->inkBudget();
+        if (stars_ == 1) starHint = fmt("Save %d%% for the second star", static_cast<int>(std::ceil(level_.twoStarPercent)));
+        else if (!thrifty) starHint = fmt("Use at most half the ink and save %d%% for three stars",
+                                          static_cast<int>(std::ceil(level_.threeStarPercent)));
+        else starHint = fmt("Save %d%% for the third star", static_cast<int>(std::ceil(level_.threeStarPercent)));
+    }
+    const Vector2 hintM = starHint.empty() ? Vector2{0, 0} : measureText(FontRole::Regular, starHint, theme::type::small * s);
+    const float hintH = starHint.empty() ? 0.0f : hintM.y + 14.0f * s;
 
-    const float cw = std::max({w, tM.x + 2 * pad, sM.x + 2 * pad});
-    const float h = pad + tM.y + 4.0f * s + sM.y + 24.0f * s + starsH + statH + 28.0f * s + btnH + pad;
+    const float cw = std::max({w, tM.x + 2 * pad, sM.x + 2 * pad, hintM.x + 2 * pad});
+    const float h = pad + tM.y + 4.0f * s + sM.y + 24.0f * s + starsH + hintH + statH + 28.0f * s + btnH + pad;
     const Rectangle r{(static_cast<float>(GetScreenWidth()) - cw) * 0.5f, (static_cast<float>(GetScreenHeight()) - h) * 0.5f, cw, h};
 
     beginCard(r);
@@ -526,6 +549,12 @@ void GameplayScene::drawResultCard() {
             if (t <= 0.0f) ui::star({cx, cy + lift}, starR, 0.0f, a * 0.6f);
         }
         y += starsH;
+        if (!starHint.empty()) {
+            const float ha = a * std::clamp((resultTime_ - 1.1f) / 0.4f, 0.0f, 1.0f);
+            ui::textCentered(FontRole::Regular, starHint, {r.x, y - 8.0f * s, r.width, hintM.y}, theme::type::small * s,
+                             ease::alpha(theme::textDim, ha));
+            y += hintH;
+        }
     }
 
     const char* labels[] = {"SAVED", "GOAL", "INK USED"};

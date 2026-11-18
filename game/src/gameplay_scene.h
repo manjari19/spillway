@@ -25,7 +25,10 @@ public:
     // Developer hooks used by the screenshot mode.
     void debugPause();
     void debugAutoSolve();
+    void debugMidLevel();
+    void debugDigSoon() { digDemoAt_ = 0.6f; } // scripted dig at 0.6 s (pair with SPILLWAY_SHOT_TIME)
     void debugOverlay(bool on) { showDebug_ = on; }
+    void debugCursor(bool on) { forceCursor_ = on; } // pinned mouse counts as on-screen
 
 private:
     enum class Mode { Playing, Paused, Result };
@@ -75,6 +78,8 @@ private:
     spillway::Vec2 lastMouse_{};
 
     bool showDebug_ = false;
+    bool forceCursor_ = false;
+    float digDemoAt_ = -1.0f;
     bool showGrid_ = false;
     bool debugPush_ = false;
     spillway::Interaction interaction_{};

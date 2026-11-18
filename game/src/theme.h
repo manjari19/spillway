@@ -16,12 +16,17 @@ inline constexpr Color levelBottom{0x0a, 0x09, 0x1a, 255};
 inline constexpr Color waterSlow{0x6d, 0x3c, 0xff, 255};
 inline constexpr Color waterFast{0x3e, 0xe8, 0xff, 255};
 
-// Terrain
-inline constexpr Color dirt{0x3a, 0x24, 0x33, 255};
-inline constexpr Color dirtTop{0x5a, 0x3a, 0x4c, 255};
-inline constexpr Color rock{0x2a, 0x2f, 0x45, 255};
-inline constexpr Color rockEdge{0x46, 0x50, 0x72, 255};
+// Terrain: one plum -> indigo family, lit by the water's violet/cyan.
+inline constexpr Color strataA{0x4c, 0x2e, 0x58, 255};  // plum band
+inline constexpr Color strataB{0x35, 0x2b, 0x62, 255};  // indigo band
+inline constexpr Color strataC{0x58, 0x3a, 0x7c, 255};  // violet accent band
+inline constexpr Color rimLight{0x9a, 0x84, 0xe0, 255}; // lavender rim on exposed dirt
+inline constexpr Color waterTint{0x6c, 0xc8, 0xff, 255};// edges next to water
+inline constexpr Color rock{0x17, 0x16, 0x31, 255};     // obsidian body (#14132a range)
+inline constexpr Color rockEdge{0xb4, 0xa6, 0xff, 255}; // lavender edge glow
+inline constexpr Color rockEdgeAlt{0x6a, 0xe6, 0xff, 255}; // cyan edge glow
 inline constexpr Color wall{0xe8, 0xe6, 0xff, 255};
+inline constexpr Color dirtTop = rimLight; // dust particles
 
 // Accents (used sparingly)
 inline constexpr Color violet = waterSlow;
@@ -33,7 +38,7 @@ inline constexpr Color star{0xbf, 0xf6, 0xff, 255};
 // Text
 inline constexpr Color text{0xec, 0xeb, 0xff, 255};
 inline constexpr Color textDim{0x9a, 0x96, 0xc4, 255};
-inline constexpr Color textMuted{0x9a, 0x96, 0xc4, 110};
+inline constexpr Color textMuted{0x9a, 0x96, 0xc4, 150};
 
 // Glass UI
 inline constexpr Color glassFill{20, 17, 42, 175};

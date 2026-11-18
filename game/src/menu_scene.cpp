@@ -117,7 +117,10 @@ void MenuScene::drawWorld() {
     // Left scrim so the menu reads over the water, then the title drawn here
     // too so the bloom gives it a soft glow (the crisp copy is in drawUi).
     const int sw = GetScreenWidth(), sh = GetScreenHeight();
-    DrawRectangleGradientH(0, 0, static_cast<int>(static_cast<float>(sw) * 0.62f), sh, Color{5, 4, 13, 205},
+    // Solid behind the text column, then a long soft fade to the right.
+    const int solid = static_cast<int>(static_cast<float>(sw) * 0.34f);
+    DrawRectangle(0, 0, solid, sh, Color{5, 4, 13, 200});
+    DrawRectangleGradientH(solid, 0, static_cast<int>(static_cast<float>(sw) * 0.36f), sh, Color{5, 4, 13, 200},
                            Color{5, 4, 13, 0});
     drawTitle(0.55f * ease::outCubic(intro_));
 }
@@ -132,7 +135,7 @@ void MenuScene::drawUi() {
     const float titleY = sh * 0.2f;
     const float titleH = measureText(FontRole::SemiBold, kTitle, theme::type::display * s, kTitleTracking).y;
     drawText(FontRole::Regular, "A fluid puzzle about guiding water", {x + 4.0f * s, titleY + titleH + 4.0f * s},
-             20.0f * s, ease::alpha(theme::textDim, in));
+             20.0f * s, ease::alpha(ease::mix(theme::textDim, theme::text, 0.35f), in));
 
     // Sliding highlight bar: a violet wash fading to the right, with a thin
     // glowing cyan edge on the left.
@@ -173,5 +176,5 @@ void MenuScene::drawUi() {
     drawText(FontRole::Regular, "Move the mouse to stir the water", {x, sh - 40.0f * s}, fs, ease::alpha(theme::textDim, in * 0.8f));
     const std::string right = "Up/Down + Enter, or click";
     const Vector2 rm = measureText(FontRole::Regular, right, fs);
-    drawText(FontRole::Regular, right, {sw - x - rm.x, sh - 40.0f * s}, fs, ease::alpha(theme::textMuted, in));
+    drawText(FontRole::Regular, right, {sw - x - rm.x, sh - 40.0f * s}, fs, ease::alpha(theme::textDim, in * 0.8f));
 }

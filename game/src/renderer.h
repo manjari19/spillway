@@ -21,6 +21,11 @@
 #include "spillway/vec2.h"
 #include "view.h"
 
+// Water look: kernel radius in metres (~2.5x the 0.135 m particle spacing)
+// and the field value treated as the surface. A full interior sums to ~5.
+inline constexpr float kWaterKernelRadius = 0.34f;
+inline constexpr float kWaterThreshold = 1.35f;
+
 class Renderer {
 public:
     void init();
@@ -52,6 +57,8 @@ public:
     static void blendAdditive();
 
     Image screenshot() const;
+    // The water field drawn by the last drawWater() call (for water-lit terrain).
+    const Texture2D& waterField() const { return blob_.texture; }
 
 private:
     void bindLayer(RenderTexture2D& target, bool logical);

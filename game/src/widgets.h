@@ -18,6 +18,10 @@ float scale();
 // Roundness value for raylib's rounded rectangles from a pixel radius.
 float roundness(Rectangle r, float radius);
 
+// Soft glow (or shadow) around a rounded box, centred on it. `inside`
+// sets the opacity under the box itself (0 = ring only).
+void glow(Rectangle box, float radius, float softness, Color color, float inside);
+
 // Translucent rounded card with a soft drop shadow, thin light border and a
 // faint sheen on its upper half.
 void glass(Rectangle r, float radius, float alpha = 1.0f);

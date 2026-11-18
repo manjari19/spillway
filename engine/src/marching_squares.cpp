@@ -6,17 +6,43 @@
 namespace spillway {
 
 float TerrainMesher::field(const Terrain& t, Cell material, int x, int y) {
-    // 3x3 binomial blur of the 0/1 occupancy: weights 1 2 1 / 2 4 2 / 1 2 1.
-    static constexpr int k[3] = {1, 2, 1};
+    // 5x5 binomial blur of the 0/1 occupancy: separable weights 1 4 6 4 1.
+    static constexpr int k[5] = {1, 4, 6, 4, 1};
     int sum = 0;
-    for (int j = -1; j <= 1; ++j) {
+    for (int j = -kBlurRadius; j <= kBlurRadius; ++j) {
         const int yy = std::clamp(y + j, 0, t.height() - 1);
-        for (int i = -1; i <= 1; ++i) {
+        for (int i = -kBlurRadius; i <= kBlurRadius; ++i) {
             const int xx = std::clamp(x + i, 0, t.width() - 1);
-            if (t.at(xx, yy) == material) sum += k[i + 1] * k[j + 1];
+            if (t.at(xx, yy) == material) sum += k[i + kBlurRadius] * k[j + kBlurRadius];
         }
     }
-    return static_cast<float>(sum) / 16.0f;
+    const float v = static_cast<float>(sum) / 256.0f;
+    // Keep every cell centre on its true side of the contour, so even a
+    // single-cell crumb is drawn (visuals must never hide something water
+    // collides with). Edge positions between centres still come from the
+    // smooth values, which is what removes the stair-steps.
+    const Cell centre = t.at(std::clamp(x, 0, t.width() - 1), std::clamp(y, 0, t.height() - 1));
+    return centre == material ? std::max(v, 0.51f) : std::min(v, 0.49f);
+}
+
+float TerrainMesher::solidField(const Terrain& t, int x, int y) {
+    // Plain blurred occupancy of any solid (no clamping): used for shading.
+    static constexpr int k[5] = {1, 4, 6, 4, 1};
+    int sum = 0;
+    for (int j = -kBlurRadius; j <= kBlurRadius; ++j) {
+        const int yy = std::clamp(y + j, 0, t.height() - 1);
+        for (int i = -kBlurRadius; i <= kBlurRadius; ++i) {
+            const int xx = std::clamp(x + i, 0, t.width() - 1);
+            if (isSolid(t.at(xx, yy))) sum += k[i + kBlurRadius] * k[j + kBlurRadius];
+        }
+    }
+    return static_cast<float>(sum) / 256.0f;
+}
+
+CellRect TerrainMesher::fieldFootprint(const Terrain& t, CellRect d) {
+    if (d.empty()) return d;
+    return {std::max(0, d.x0 - kBlurRadius), std::max(0, d.y0 - kBlurRadius), std::min(t.width() - 1, d.x1 + kBlurRadius),
+            std::min(t.height() - 1, d.y1 + kBlurRadius)};
 }
 
 void TerrainMesher::meshRegion(const Terrain& t, Cell material, int sx0, int sy0, int sx1, int sy1,
@@ -124,16 +150,18 @@ void TerrainMesher::meshChunk(const Terrain& t, int cx, int cy) {
     }
 }
 
-int TerrainMesher::update(const Terrain& t) {
-    const CellRect d = t.takeMeshDirty();
+int TerrainMesher::update(const Terrain& t) { return updateRect(t, t.takeMeshDirty()); }
+
+int TerrainMesher::updateRect(const Terrain& t, CellRect d) {
     if (d.empty()) return 0;
-    // A cell change alters field values one cell around it (the blur), and
-    // a sample is a corner of the squares to its left/top. So squares
-    // [x0 - 2, x1 + 1] are affected; square sx lives in chunk (sx + 1) / kChunk.
-    const int cx0 = std::clamp((d.x0 - 2 + 1) / kChunk, 0, chunksX_ - 1);
-    const int cx1 = std::clamp((d.x1 + 1 + 1) / kChunk, 0, chunksX_ - 1);
-    const int cy0 = std::clamp((d.y0 - 2 + 1) / kChunk, 0, chunksY_ - 1);
-    const int cy1 = std::clamp((d.y1 + 1 + 1) / kChunk, 0, chunksY_ - 1);
+    // A cell change alters field values kBlurRadius cells around it, and a
+    // sample is a corner of the squares to its left/top. So squares
+    // [x0 - R - 1, x1 + R] are affected; square sx lives in chunk (sx + 1) / kChunk.
+    const int R = kBlurRadius;
+    const int cx0 = std::clamp((d.x0 - R - 1 + 1) / kChunk, 0, chunksX_ - 1);
+    const int cx1 = std::clamp((d.x1 + R + 1) / kChunk, 0, chunksX_ - 1);
+    const int cy0 = std::clamp((d.y0 - R - 1 + 1) / kChunk, 0, chunksY_ - 1);
+    const int cy1 = std::clamp((d.y1 + R + 1) / kChunk, 0, chunksY_ - 1);
     for (int cy = cy0; cy <= cy1; ++cy)
         for (int cx = cx0; cx <= cx1; ++cx) meshChunk(t, cx, cy);
     ++version_;
