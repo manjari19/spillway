@@ -5,6 +5,9 @@ add_library(spillway_engine STATIC
   src/fluid.cpp
   src/timestep.cpp
   src/simulation.cpp
+  src/terrain.cpp
+  src/level.cpp
+  src/world.cpp
 )
 target_include_directories(spillway_engine PUBLIC include)
 target_compile_features(spillway_engine PUBLIC cxx_std_20)

@@ -1,0 +1,40 @@
+# Level 1 - First Channel
+# Teaches digging. Water waits in a dirt basin at the top left. The ground
+# slopes down to the right, and the drain is buried under the dirt in the
+# bottom-right corner. Dig through the basin's rim, then down to the drain.
+
+name  First Channel
+hint  Dig through the rim, then down to the drain.
+size  16 9
+win   70
+ink   6
+
+# Solid dirt everywhere, then carve out the open air.
+dirt  rect 0 0 16 9
+
+# Sky above everything.
+empty rect 0 0 16 0.6
+# Air above the slope, right of the basin rim. The ground falls from
+# y = 2.9 next to the rim to y = 5.6 at the right edge. The basin floor
+# (y = 2.6) is above the top of the slope, so once the rim is open
+# gravity carries all the water downhill.
+empty poly 6.0 0.6  16 0.6  16 5.6  6.0 2.9
+
+# The basin the water starts in.
+empty rect 0.3 0.6 5.0 2.6
+
+# Buried drain chamber in the bottom-right corner.
+empty rect 12.4 6.4 15.7 8.7
+
+# A few boulders: rock can't be dug, so route around them.
+rock  circle 9.6 6.2 0.75
+rock  circle 4.2 6.9 1.0
+rock  circle 13.0 5.6 0.35
+
+# Unbreakable border on the sides and floor.
+rock  rect 0 0 0.3 9
+rock  rect 15.7 0 16 9
+rock  rect 0 8.7 16 9
+
+water rect 0.35 0.7 4.95 2.55
+drain rect 12.4 8.1 15.7 8.7

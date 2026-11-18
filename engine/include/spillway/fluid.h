@@ -36,9 +36,12 @@ struct FluidParams {
     float viscosityStrength = 0.06f;
     Vec2 gravity{0.0f, 12.0f};           // +y is down
     float particleRadius = 0.05f;        // collision radius against walls
-    float boundaryRestitution = 0.3f;    // fraction of normal speed kept on bounce
+    float boundaryRestitution = 0.3f;    // fraction of normal speed kept on bounce (box)
+    float terrainFriction = 0.1f;        // Coulomb coefficient against terrain
     float maxSpeed = 25.0f;              // safety clamp, m/s
 };
+
+class Terrain;
 
 enum class NeighbourSearch { Grid, BruteForce };
 
@@ -60,6 +63,15 @@ public:
     // jitter breaks the perfect lattice (which otherwise stacks in columns).
     void spawnBlock(Vec2 min, Vec2 max, uint64_t seed = 1);
     void clear();
+
+    // Removes every particle i with remove[i] != 0, keeping the order of the
+    // rest (stable compaction, so results stay deterministic).
+    void removeMarked(std::span<const uint8_t> remove);
+
+    // Collide against level geometry. The terrain must outlive this system.
+    // Also limits per-substep displacement to one terrain cell.
+    void setTerrain(const Terrain* terrain);
+    const Terrain* terrain() const { return terrain_; }
 
     // Advance by one substep of length dt seconds.
     void step(float dt);
@@ -98,6 +110,7 @@ private:
 
     Vec2 externalAcceleration(Vec2 position, Vec2 velocity) const;
     void resolveBounds(Vec2& position, Vec2& velocity) const;
+    void resolveTerrain(Vec2& position, Vec2& velocity, Vec2 previous) const;
 
     template <class Fn>
     void forEachNeighbourCandidate(Vec2 p, Fn&& fn) const;
@@ -109,6 +122,7 @@ private:
     NeighbourSearch search_ = NeighbourSearch::Grid;
     Interaction interaction_{};
     SpatialGrid grid_;
+    const Terrain* terrain_ = nullptr;
 
     // Structure-of-arrays particle storage.
     std::vector<Vec2> positions_;

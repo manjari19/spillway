@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "spillway/rng.h"
+#include "spillway/terrain.h"
 
 namespace spillway {
 
@@ -41,6 +42,28 @@ void FluidSystem::spawnBlock(Vec2 min, Vec2 max, uint64_t seed) {
             addParticle({x + rng.uniform(-jitter, jitter), y + rng.uniform(-jitter, jitter)});
         }
     }
+}
+
+void FluidSystem::setTerrain(const Terrain* terrain) { terrain_ = terrain; }
+
+void FluidSystem::removeMarked(std::span<const uint8_t> remove) {
+    size_t out = 0;
+    for (size_t i = 0; i < positions_.size(); ++i) {
+        if (remove[i]) continue;
+        positions_[out] = positions_[i];
+        velocities_[out] = velocities_[i];
+        predicted_[out] = predicted_[i];
+        newVelocities_[out] = newVelocities_[i];
+        densities_[out] = densities_[i];
+        nearDensities_[out] = nearDensities_[i];
+        ++out;
+    }
+    positions_.resize(out);
+    velocities_.resize(out);
+    predicted_.resize(out);
+    newVelocities_.resize(out);
+    densities_.resize(out);
+    nearDensities_.resize(out);
 }
 
 void FluidSystem::clear() {
@@ -180,13 +203,68 @@ void FluidSystem::forceRange(size_t begin, size_t end, float dt) {
 }
 
 void FluidSystem::integrateRange(size_t begin, size_t end, float dt) {
-    const float maxSpeed2 = params_.maxSpeed * params_.maxSpeed;
+    // Speed limit: the global safety clamp, and with terrain also "at most one
+    // cell per substep" so the swept test below never has far to look.
+    float maxSpeed = params_.maxSpeed;
+    if (terrain_) maxSpeed = std::min(maxSpeed, terrain_->cellSize() / dt);
+    const float maxSpeed2 = maxSpeed * maxSpeed;
+
     for (size_t i = begin; i < end; ++i) {
         Vec2& v = velocities_[i];
         const float s2 = lengthSq(v);
-        if (s2 > maxSpeed2) v *= params_.maxSpeed / std::sqrt(s2);
-        positions_[i] += v * dt;
-        resolveBounds(positions_[i], v);
+        if (s2 > maxSpeed2) v *= maxSpeed / std::sqrt(s2);
+
+        const Vec2 previous = positions_[i];
+        Vec2 p = previous + v * dt;
+        if (terrain_) {
+            // Anti-tunneling: if the straight path from the old to the new
+            // position enters a solid cell, stop just before it. The SDF
+            // push-out then places the particle exactly on the surface.
+            float tHit;
+            if (terrain_->segmentHitsSolid(previous, p, tHit)) {
+                const float len = length(p - previous);
+                const float back = len > 0.0f ? 1e-4f / len : 0.0f;
+                p = previous + (p - previous) * std::max(0.0f, tHit - back);
+            }
+            resolveTerrain(p, v, previous);
+        }
+        resolveBounds(p, v);
+        positions_[i] = p;
+    }
+}
+
+void FluidSystem::resolveTerrain(Vec2& p, Vec2& v, Vec2 previous) const {
+    const float r = params_.particleRadius;
+    // Two projection passes: bilinear phi is not exactly linear, so one push
+    // can land a hair short near corners.
+    for (int iter = 0; iter < 2; ++iter) {
+        const float phi = terrain_->distance(p);
+        if (phi >= r) return;
+        const Vec2 g = terrain_->gradient(p);
+        const float gl = length(g);
+        if (gl < 1e-4f) {
+            // Degenerate spot (e.g. a gap narrower than a cell, where every
+            // nearby node reads 0): there is no usable normal, so undo the
+            // move instead of guessing a direction.
+            p = previous;
+            v = {};
+            return;
+        }
+        const Vec2 n = g / gl;
+        // Push out along the normal so the particle sits exactly r from the
+        // surface.
+        p += n * (r - phi);
+        // Remove the velocity going into the surface (no bounce), then apply
+        // Coulomb friction: tangential speed drops by mu * (normal speed
+        // removed), but never reverses direction.
+        const float vn = dot(v, n);
+        if (vn < 0.0f) {
+            Vec2 vt = v - n * vn;
+            const float vtLen = length(vt);
+            const float drop = params_.terrainFriction * -vn;
+            vt = vtLen > drop ? vt * ((vtLen - drop) / vtLen) : Vec2{};
+            v = vt;
+        }
     }
 }
 
