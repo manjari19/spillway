@@ -86,6 +86,7 @@ public:
 
     const FluidParams& params() const { return params_; }
     void setParams(const FluidParams& params);
+    void setGravity(Vec2 g) { params_.gravity = g; }
     const SmoothingKernels& kernels() const { return kernels_; }
 
     NeighbourSearch neighbourSearch() const { return search_; }

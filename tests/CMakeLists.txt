@@ -7,6 +7,7 @@ add_executable(spillway_tests
   test_collision.cpp
   test_level.cpp
   test_world.cpp
+  test_marching_squares.cpp
 )
 target_compile_definitions(spillway_tests PRIVATE SPILLWAY_LEVEL_DIR="${PROJECT_SOURCE_DIR}/game/levels")
 target_link_libraries(spillway_tests PRIVATE spillway_engine Catch2::Catch2WithMain spillway_warnings)

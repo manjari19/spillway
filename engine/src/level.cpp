@@ -118,7 +118,7 @@ bool rectInside(const Rect& r, Vec2 size) {
 
 } // namespace
 
-LevelLoadResult parseLevel(std::string_view text) {
+LevelLoadResult parseLevel(std::string_view text, bool requireGoals) {
     LevelDesc level;
     Parser p;
     bool haveSize = false, haveWin = false;
@@ -160,6 +160,11 @@ LevelLoadResult parseLevel(std::string_view text) {
             if (!p.numbers(words, 1, 1, v, "ink")) break;
             if (v[0] < 0.0f) { p.fail("ink cannot be negative"); break; }
             level.inkMetres = v[0];
+        } else if (cmd == "stars") {
+            if (!p.numbers(words, 1, 2, v, "stars")) break;
+            if (v[0] <= 0.0f || v[1] > 100.0f || v[1] < v[0]) { p.fail("stars needs 0 < two-star <= three-star <= 100"); break; }
+            level.twoStarPercent = v[0];
+            level.threeStarPercent = v[1];
         } else if (cmd == "empty" || cmd == "dirt" || cmd == "rock") {
             TerrainOp op;
             op.material = cmd == "empty" ? Cell::Empty : cmd == "dirt" ? Cell::Dirt : Cell::Rock;
@@ -180,22 +185,29 @@ LevelLoadResult parseLevel(std::string_view text) {
     if (p.error.empty()) {
         if (!haveSize) p.error = "missing required 'size'";
         else if (!haveWin) p.error = "missing required 'win'";
-        else if (level.water.empty()) p.error = "level has no 'water'";
-        else if (level.drains.empty()) p.error = "level has no 'drain'";
+        else if (requireGoals && level.water.empty()) p.error = "level has no 'water'";
+        else if (requireGoals && level.drains.empty()) p.error = "level has no 'drain'";
+        else if (level.twoStarPercent >= 0.0f && level.twoStarPercent < level.winPercent)
+            p.error = "two-star percentage cannot be below the win percentage";
         for (const auto* list : {&level.water, &level.drains, &level.pits})
             for (const Rect& r : *list)
                 if (p.error.empty() && !rectInside(r, level.size)) p.error = "a water/drain/pit rect lies outside the level";
     }
     if (!p.error.empty()) return {std::nullopt, p.error};
+    // Default star thresholds: 40% and 70% of the way from win to 100%.
+    if (level.twoStarPercent < 0.0f) {
+        level.twoStarPercent = level.winPercent + 0.4f * (100.0f - level.winPercent);
+        level.threeStarPercent = level.winPercent + 0.7f * (100.0f - level.winPercent);
+    }
     return {std::move(level), {}};
 }
 
-LevelLoadResult loadLevelFile(const std::string& path) {
+LevelLoadResult loadLevelFile(const std::string& path, bool requireGoals) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return {std::nullopt, "cannot open level file '" + path + "'"};
     std::ostringstream ss;
     ss << file.rdbuf();
-    LevelLoadResult result = parseLevel(ss.str());
+    LevelLoadResult result = parseLevel(ss.str(), requireGoals);
     if (!result) result.error = path + ": " + result.error;
     return result;
 }

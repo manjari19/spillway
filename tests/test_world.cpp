@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "spillway/world.h"
@@ -148,4 +149,42 @@ TEST_CASE("Determinism holds with a scripted sequence of edits", "[world][determ
     REQUIRE(a.first.size() == b.first.size());
     CHECK(a.first == b.first);
     CHECK(a.second == b.second);
+}
+
+TEST_CASE("Star rating uses water saved and ink used", "[world][score]") {
+    LevelDesc l;
+    l.winPercent = 70;
+    l.twoStarPercent = 82;
+    l.threeStarPercent = 92;
+    Score s;
+    s.total = 100;
+    s.required = 70;
+
+    s.saved = 69;
+    CHECK(starRating(l, s, 0, 100) == 0);
+    s.saved = 70;
+    CHECK(starRating(l, s, 0, 100) == 1);
+    s.saved = 85;
+    CHECK(starRating(l, s, 0, 100) == 2);
+    s.saved = 95;
+    CHECK(starRating(l, s, 50, 100) == 3);  // exactly half the ink: still thrifty
+    CHECK(starRating(l, s, 51, 100) == 2);  // too much ink
+    CHECK(starRating(l, s, 0, 0) == 3);     // level without ink
+}
+
+TEST_CASE("Default star thresholds come from the win percentage", "[level]") {
+    const auto r = parseLevel("size 4 4\nwin 60\nwater rect 0 0 1 1\ndrain rect 3 3 4 4\n");
+    REQUIRE(r);
+    CHECK(r.level->twoStarPercent == Catch::Approx(76.0f));
+    CHECK(r.level->threeStarPercent == Catch::Approx(88.0f));
+}
+
+TEST_CASE("Won levels finish once the flow settles", "[world]") {
+    World w(splitLevel(6.0f));
+    int s = 0;
+    while (!w.finished() && s < 1200) { w.step(); ++s; }
+    CHECK(w.finished());
+    CHECK(w.status() == LevelStatus::Won);
+    CHECK(w.stars() >= 1);
+    CHECK_FALSE(w.events().drained.empty());
 }

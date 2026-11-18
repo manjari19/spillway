@@ -12,6 +12,8 @@
 //   cell   0.075                     terrain cell size in metres (optional)
 //   win    70                        % of water that must reach a drain
 //   ink    6                         wall ink, in metres of default-width wall
+//   stars  82 92                     % saved for 2 and 3 stars (optional;
+//                                    3 stars also needs <= half the ink)
 //
 //   dirt   rect   x0 y0 x1 y1        material + shape. Materials: empty,
 //   rock   circle cx cy r            dirt, rock. (Walls are player-drawn
@@ -61,6 +63,8 @@ struct LevelDesc {
     float cellSize = 0.075f;
     float winPercent = 70.0f;
     float inkMetres = 0.0f;
+    float twoStarPercent = -1.0f;   // < 0: derived from winPercent
+    float threeStarPercent = -1.0f;
     std::vector<TerrainOp> terrain;
     std::vector<Rect> water;
     std::vector<Rect> drains;
@@ -73,8 +77,10 @@ struct LevelLoadResult {
     explicit operator bool() const { return level.has_value(); }
 };
 
-LevelLoadResult parseLevel(std::string_view text);
-LevelLoadResult loadLevelFile(const std::string& path);
+// requireGoals = false allows files without water/drain checks, e.g. the
+// decorative scene behind the main menu.
+LevelLoadResult parseLevel(std::string_view text, bool requireGoals = true);
+LevelLoadResult loadLevelFile(const std::string& path, bool requireGoals = true);
 
 // Rasterises the terrain commands: a cell takes the material of the last
 // shape containing its centre. Also builds the SDF.

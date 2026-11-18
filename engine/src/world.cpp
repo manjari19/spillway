@@ -33,6 +33,22 @@ World::World(const LevelDesc& level, const SimulationConfig& config)
     ink_ = inkBudget_;
 }
 
+int starRating(const LevelDesc& level, const Score& score, int inkUsed, int inkBudget) {
+    if (score.total <= 0 || score.saved < score.required) return 0;
+    const float pct = 100.0f * score.savedFraction();
+    int stars = 1;
+    if (pct >= level.twoStarPercent) stars = 2;
+    const bool thrifty = inkBudget <= 0 || inkUsed * 2 <= inkBudget;
+    if (stars == 2 && pct >= level.threeStarPercent && thrifty) stars = 3;
+    return stars;
+}
+
+bool World::finished() const {
+    if (status_ == LevelStatus::Lost) return true;
+    if (status_ != LevelStatus::Won) return false;
+    return fluid_.size() == 0 || secondsSinceSave_ >= kSettleSeconds;
+}
+
 float World::inkMetres(int cells) const {
     const float c = terrain_.cellSize();
     return static_cast<float>(cells) * c * c / kInkReferenceWallWidth;
@@ -102,7 +118,13 @@ void World::buildOccupancy() {
 void World::applyEdit(const Edit& e) {
     switch (e.tool) {
     case Tool::Dig:
-        stampAlong(e, [&](Vec2 c) { terrain_.dig(c, e.radius); });
+        stampAlong(e, [&](Vec2 c) {
+            terrain_.forEachCellInDisc(c, e.radius, [&](int x, int y) {
+                if (terrain_.at(x, y) != Cell::Dirt) return;
+                terrain_.set(x, y, Cell::Empty);
+                events_.dug.push_back(terrain_.cellCentre(x, y));
+            });
+        });
         break;
     case Tool::Erase:
         // Refund exactly one ink unit per wall cell removed.
@@ -135,17 +157,30 @@ void World::collectDrainsAndPits() {
         // be counted twice.
         bool counted = false;
         for (const Rect& d : level_.drains) {
-            if (d.contains(pos[i])) { ++score_.saved; ++savedNow; counted = true; break; }
+            if (d.contains(pos[i])) {
+                ++score_.saved;
+                ++savedNow;
+                counted = true;
+                events_.drained.push_back(pos[i]);
+                break;
+            }
         }
         if (!counted) {
             for (const Rect& pit : level_.pits) {
-                if (pit.contains(pos[i])) { ++score_.lost; counted = true; break; }
+                if (pit.contains(pos[i])) {
+                    ++score_.lost;
+                    counted = true;
+                    events_.lost.push_back(pos[i]);
+                    break;
+                }
             }
         }
         removeFlags_[i] = counted ? 1 : 0;
         any |= counted;
     }
     if (any) fluid_.removeMarked(removeFlags_);
+
+    secondsSinceSave_ = savedNow > 0 ? 0.0 : secondsSinceSave_ + config_.stepSeconds;
 
     // Stall detection (simulated time, so it is deterministic too).
     if (savedNow > 0 || !everEdited_ || fluid_.size() == 0) {

@@ -38,6 +38,19 @@ struct Score {
     float savedFraction() const { return total > 0 ? static_cast<float>(saved) / static_cast<float>(total) : 0.0f; }
 };
 
+// Things that happened during the last update, for visual effects. The game
+// clears these after reading them.
+struct WorldEvents {
+    std::vector<Vec2> drained; // where particles reached a drain
+    std::vector<Vec2> lost;    // where particles fell into a pit
+    std::vector<Vec2> dug;     // centres of dirt cells removed
+    void clear() { drained.clear(); lost.clear(); dug.clear(); }
+};
+
+// 1 star: won. 2 stars: saved >= level.twoStarPercent. 3 stars: saved >=
+// level.threeStarPercent and at most half the ink used. 0 if not won.
+int starRating(const LevelDesc& level, const Score& score, int inkUsed, int inkBudget);
+
 // Ink is wall area measured in cells, so erasing refunds exactly what was
 // spent. Level files give it in metres of wall at this reference width.
 constexpr float kInkReferenceWallWidth = 0.2f;
@@ -65,9 +78,16 @@ public:
     // True when the player has acted, the water has gone still and nothing
     // has reached the drain for a few seconds: time to offer a restart.
     bool stalled() const { return stalled_; }
+    // Lost, or won and the flow has died down (no water reached a drain for
+    // kSettleSeconds), so the final percentage is stable enough to score.
+    bool finished() const;
+    int stars() const { return starRating(level_, score_, inkUsed(), inkBudget_); }
+
+    WorldEvents& events() { return events_; }
 
     int inkBudget() const { return inkBudget_; }
     int inkRemaining() const { return ink_; }
+    int inkUsed() const { return inkBudget_ - ink_; }
     float inkMetres(int cells) const;
 
     uint64_t stepCount() const { return stepCount_; }
@@ -77,6 +97,7 @@ public:
 
     static constexpr double kStallSeconds = 3.0;
     static constexpr float kStillMeanSpeed = 0.2f; // m/s
+    static constexpr double kSettleSeconds = 2.5;
 
 private:
     void applyEdit(const Edit& edit);
@@ -105,6 +126,8 @@ private:
     bool everEdited_ = false;
     bool stalled_ = false;
     double quietSeconds_ = 0.0;
+    double secondsSinceSave_ = 0.0;
+    WorldEvents events_;
 
     uint64_t stepCount_ = 0;
     double lastStepMs_ = 0.0;

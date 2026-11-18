@@ -11,15 +11,20 @@ Terrain::Terrain(int cellsX, int cellsY, float cellSize)
     rebuildSdf();
 }
 
-void Terrain::markDirty(int x, int y) {
-    if (dirty_.empty()) {
-        dirty_ = {x, y, x, y};
+static void growRect(CellRect& r, int x, int y) {
+    if (r.empty()) {
+        r = {x, y, x, y};
     } else {
-        dirty_.x0 = std::min(dirty_.x0, x);
-        dirty_.y0 = std::min(dirty_.y0, y);
-        dirty_.x1 = std::max(dirty_.x1, x);
-        dirty_.y1 = std::max(dirty_.y1, y);
+        r.x0 = std::min(r.x0, x);
+        r.y0 = std::min(r.y0, y);
+        r.x1 = std::max(r.x1, x);
+        r.y1 = std::max(r.y1, y);
     }
+}
+
+void Terrain::markDirty(int x, int y) {
+    growRect(dirty_, x, y);
+    growRect(meshDirty_, x, y);
 }
 
 void Terrain::set(int x, int y, Cell c) {
@@ -34,6 +39,7 @@ void Terrain::set(int x, int y, Cell c) {
 void Terrain::fill(Cell c) {
     std::fill(cells_.begin(), cells_.end(), c);
     dirty_ = {0, 0, w_ - 1, h_ - 1};
+    meshDirty_ = dirty_;
     ++version_;
 }
 

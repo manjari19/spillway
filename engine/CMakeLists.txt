@@ -8,6 +8,7 @@ add_library(spillway_engine STATIC
   src/terrain.cpp
   src/level.cpp
   src/world.cpp
+  src/marching_squares.cpp
 )
 target_include_directories(spillway_engine PUBLIC include)
 target_compile_features(spillway_engine PUBLIC cxx_std_20)

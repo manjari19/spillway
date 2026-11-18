@@ -90,11 +90,18 @@ public:
     float distance(Vec2 p) const;  // bilinear interpolation of node values
     Vec2 gradient(Vec2 p) const;   // d(phi)/dp, points away from solid
     float nodeDistance(int i, int j) const { return sdf_[nodeIndex(i, j)]; }
+    // Raw node values, row-major, (width+1) x (height+1). Used for rendering.
+    const std::vector<float>& sdfNodes() const { return sdf_; }
     void rebuildSdf();             // whole level (level load)
     // Recompute only nodes affected by cells edited since the last call.
     // Returns the number of nodes recomputed.
     int updateSdf();
     CellRect lastSdfRegion() const { return lastSdfRegion_; }
+
+    // Cells edited since the last call, for the renderer's mesher. Tracked
+    // separately from the SDF so the two can update independently.
+    // Mutable bookkeeping: consuming it does not change the terrain itself.
+    CellRect takeMeshDirty() const { CellRect r = meshDirty_; meshDirty_ = {}; return r; }
 
     // Swept test for anti-tunneling. Walks every cell the segment a->b passes
     // through (Amanatides & Woo grid traversal). If one is solid, returns true
@@ -115,6 +122,7 @@ private:
     std::vector<Cell> cells_;
     std::vector<float> sdf_; // (w+1) x (h+1) node values, metres
     CellRect dirty_{};       // cells edited since last updateSdf()
+    mutable CellRect meshDirty_{}; // cells edited since last takeMeshDirty()
     CellRect lastSdfRegion_{};
     uint64_t version_ = 0;
 };
