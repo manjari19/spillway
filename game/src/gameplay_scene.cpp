@@ -8,6 +8,7 @@
 
 #include "app.h"
 #include "assets.h"
+#include "input.h"
 #include "ease.h"
 #include "renderer.h"
 #include "theme.h"
@@ -37,13 +38,30 @@ Color toolColor(Tool t) {
 
 GameplayScene::GameplayScene(App& app, int levelIndex, LevelDesc level)
     : app_(app), levelIndex_(levelIndex), level_(std::move(level)) {
-    world_ = std::make_unique<World>(level_);
+    particleScale_ = app.settings().particleScale();
+    world_ = std::make_unique<World>(level_, SimulationConfig{}, particleScale_);
     terrainView_.reset(world_->terrain());
     layout();
 }
 
-void GameplayScene::restart() { app_.goTo(app_.makeLevel(levelIndex_)); }
-void GameplayScene::toMenu() { app_.goTo(app_.makeMenu()); }
+void GameplayScene::restart() { app_.startLevel(levelIndex_); }
+void GameplayScene::toMenu() { app_.openMenu(); }
+
+void GameplayScene::enterResult() {
+    // The world is frozen now: everything shown comes from its Outcome.
+    const Outcome& o = world_->outcome();
+    mode_ = Mode::Result;
+    resultTime_ = 0.0f;
+    focus_ = 0;
+    stars_ = o.stars;
+    stroking_ = false;
+    if (o.status == LevelStatus::Won) {
+        newBest_ = app_.record(levelIndex_, o.stars, o.percent);
+        bool all = true;
+        for (int i = 0; i < app_.levelCount(); ++i) all = all && app_.progress().beaten(i);
+        allComplete_ = all && levelIndex_ == app_.levelCount() - 1;
+    }
+}
 
 void GameplayScene::layout() {
     const float s = ui::scale();
@@ -68,7 +86,7 @@ bool GameplayScene::brushBlocked() const {
     if (tool_ != Tool::Wall) return false;
     if (world_->inkRemaining() <= 0) return true;
     // Walls are never placed on water, so show the brush as unavailable.
-    const Vec2 m = view_.toWorld(GetMousePosition());
+    const Vec2 m = view_.toWorld(input::mouse());
     const float r = wallRadius_ + world_->fluid().params().particleRadius;
     for (const Vec2 p : world_->fluid().positions())
         if (lengthSq(p - m) < r * r) return true;
@@ -98,41 +116,41 @@ void GameplayScene::debugMidLevel() {
 }
 
 void GameplayScene::handlePlayInput() {
-    if (IsKeyPressed(KEY_ONE)) tool_ = Tool::Dig;
-    if (IsKeyPressed(KEY_TWO)) tool_ = Tool::Wall;
-    if (IsKeyPressed(KEY_THREE)) tool_ = Tool::Erase;
-    if (IsKeyPressed(KEY_P)) debugPush_ = !debugPush_;
+    if (input::pressed(KEY_ONE)) tool_ = Tool::Dig;
+    if (input::pressed(KEY_TWO)) tool_ = Tool::Wall;
+    if (input::pressed(KEY_THREE)) tool_ = Tool::Erase;
+    if (input::pressed(KEY_P)) debugPush_ = !debugPush_;
 
     // Brush size: wheel or [ ]. Each tool keeps its own size and limits.
     float& r = brushRadius();
     const float lo = tool_ == Tool::Wall ? 0.08f : 0.15f;
     const float hi = tool_ == Tool::Wall ? 0.25f : 0.8f;
-    float delta = GetMouseWheelMove() * 0.03f;
-    if (IsKeyPressed(KEY_LEFT_BRACKET)) delta -= 0.03f;
-    if (IsKeyPressed(KEY_RIGHT_BRACKET)) delta += 0.03f;
+    float delta = input::wheel() * 0.03f;
+    if (input::pressed(KEY_LEFT_BRACKET)) delta -= 0.03f;
+    if (input::pressed(KEY_RIGHT_BRACKET)) delta += 0.03f;
     r = std::clamp(r + delta, lo, hi);
 
-    const Vec2 mouse = view_.toWorld(GetMousePosition());
+    const Vec2 mouse = view_.toWorld(input::mouse());
     interaction_ = {};
     if (debugPush_) {
         // Debug only: pull (LMB) / push (RMB) the water.
         interaction_.point = mouse;
         interaction_.radius = 1.4f;
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) { interaction_.active = true; interaction_.strength = 40.0f; }
-        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) { interaction_.active = true; interaction_.strength = -40.0f; }
+        if (input::mouseDown(MOUSE_BUTTON_LEFT)) { interaction_.active = true; interaction_.strength = 40.0f; }
+        if (input::mouseDown(MOUSE_BUTTON_RIGHT)) { interaction_.active = true; interaction_.strength = -40.0f; }
         stroking_ = false;
         return;
     }
     // A drag becomes a chain of segment edits, applied at the next fixed step.
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (input::mousePressed(MOUSE_BUTTON_LEFT)) {
         stroking_ = true;
         lastMouse_ = mouse;
         world_->queueEdit({tool_, mouse, mouse, r});
-    } else if (stroking_ && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && lengthSq(mouse - lastMouse_) > 0.02f * 0.02f) {
+    } else if (stroking_ && input::mouseDown(MOUSE_BUTTON_LEFT) && lengthSq(mouse - lastMouse_) > 0.02f * 0.02f) {
         world_->queueEdit({tool_, lastMouse_, mouse, r});
         lastMouse_ = mouse;
     }
-    if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) stroking_ = false;
+    if (!input::mouseDown(MOUSE_BUTTON_LEFT)) stroking_ = false;
 }
 
 void GameplayScene::spawnEffects() {
@@ -149,23 +167,23 @@ void GameplayScene::update(float dt) {
     layout();
 
     // Global keys.
-    if (IsKeyPressed(KEY_GRAVE)) showDebug_ = !showDebug_;
-    if (IsKeyPressed(KEY_G)) showGrid_ = !showGrid_;
-    if (IsKeyPressed(KEY_B)) {
+    if (input::pressed(KEY_GRAVE)) showDebug_ = !showDebug_;
+    if (input::pressed(KEY_G)) showGrid_ = !showGrid_;
+    if (input::pressed(KEY_B)) {
         auto& f = world_->fluid();
         f.setNeighbourSearch(f.neighbourSearch() == NeighbourSearch::Grid ? NeighbourSearch::BruteForce : NeighbourSearch::Grid);
     }
-    if (IsKeyPressed(KEY_R)) restart();
+    if (input::pressed(KEY_R)) restart();
 
     if (mode_ == Mode::Playing) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (input::pressed(KEY_ESCAPE)) {
             mode_ = Mode::Paused;
             focus_ = 0;
             stroking_ = false;
         } else {
             handlePlayInput();
         }
-    } else if (mode_ == Mode::Paused && IsKeyPressed(KEY_ESCAPE)) {
+    } else if (mode_ == Mode::Paused && input::pressed(KEY_ESCAPE)) {
         mode_ = Mode::Playing;
     }
 
@@ -173,21 +191,25 @@ void GameplayScene::update(float dt) {
         world_->queueEdit({Tool::Dig, {7.5f, 3.6f}, {9.5f, 4.4f}, 0.4f});
         digDemoAt_ = -1.0f;
     }
-    if (mode_ != Mode::Paused) {
+    // Goal reached: the level keeps running; Finish (button or Enter) ends it now.
+    if (mode_ == Mode::Playing && world_->goalReached() && !world_->finished()) {
+        const bool clicked = input::mousePressed(MOUSE_BUTTON_LEFT) &&
+                             CheckCollisionPointRec(input::mouse(), finishButtonRect());
+        if (clicked || input::pressed(KEY_ENTER)) {
+            world_->finish();
+            stroking_ = false;
+        }
+    }
+    if (mode_ != Mode::Paused && !world_->finished()) {
         world_->fluid().setInteraction(mode_ == Mode::Playing ? interaction_ : Interaction{});
         world_->update(dt);
         int nodes = world_->lastSdfNodes();
         if (nodes > 0) lastSdfNodes_ = nodes;
         spawnEffects();
-        effects_.update(dt);
     }
+    if (mode_ != Mode::Paused) effects_.update(dt);
 
-    if (mode_ == Mode::Playing && world_->finished()) {
-        mode_ = Mode::Result;
-        resultTime_ = 0.0f;
-        focus_ = 0;
-        stars_ = world_->stars();
-    }
+    if (mode_ == Mode::Playing && world_->finished()) enterResult();
     if (mode_ == Mode::Result) resultTime_ += dt;
 
     // Cards ease in over ~0.35 s and out a little faster.
@@ -243,7 +265,7 @@ void GameplayScene::drawDrainsAndPits() {
 }
 
 void GameplayScene::drawBrush() {
-    const Vector2 m = GetMousePosition();
+    const Vector2 m = input::mouse();
     const float s = ui::scale();
     if (debugPush_) {
         const float r = 1.4f * view_.scale;
@@ -279,7 +301,7 @@ void GameplayScene::drawWorld() {
     // Open space uses the same full-screen background gradient as
     // everything else, so there is no visible letterbox around the level.
     drawDrainsAndPits();
-    app_.renderer().drawWater(world_->fluid().positions(), world_->fluid().velocities(), view_);
+    app_.renderer().drawWater(world_->fluid().positions(), world_->fluid().velocities(), view_, particleScale_);
     terrainView_.draw(app_.renderer(), view_, world_->terrain());
     effects_.draw(view_);
 
@@ -295,7 +317,7 @@ void GameplayScene::drawWorld() {
             }
     }
 
-    if (mode_ == Mode::Playing && (IsCursorOnScreen() || forceCursor_)) drawBrush();
+    if (mode_ == Mode::Playing && (input::cursorOnScreen() || forceCursor_)) drawBrush();
 }
 
 // ------------------------------------------------------------------- UI ---
@@ -383,7 +405,7 @@ void GameplayScene::drawHud() {
     const float blockH = svM.y + 8.0f * s + barH;
     const float my = bar.y + (bar.height - blockH) * 0.5f;
     drawText(FontRole::Medium, "SAVED", {mx, my + (svM.y - scM.y) * 0.5f}, cap, theme::textDim, 0.14f);
-    const bool reached = world_->score().saved >= world_->score().required;
+    const bool reached = world_->goalReached();
     drawText(FontRole::SemiBold, savedVal, {mx + scM.x + 8.0f * s, my}, theme::type::small * s,
              reached ? theme::cyan : theme::text);
     drawText(FontRole::Medium, goal, {mx + meterW - gM.x, my + (svM.y - gM.y) * 0.5f}, cap, theme::textDim, 0.14f);
@@ -409,6 +431,31 @@ void GameplayScene::drawToasts() {
     };
 
     if (mode_ != Mode::Playing) return;
+
+    // Goal reached: a toast with a Finish button. The level keeps running
+    // so the rest of the water can still drain in for a better score.
+    const float goalA = ui::animate("toast:goal", world_->goalReached() && !world_->finished() ? 1.0f : 0.0f, 8.0f);
+    if (goalA > 0.01f) {
+        const Rectangle r = finishButtonRect();
+        const std::string l1 = "Goal reached";
+        const std::string l2 = "Let the water settle for a better score, or finish now";
+        const Vector2 a = measureText(FontRole::SemiBold, l1, theme::type::body * s);
+        const Vector2 b = measureText(FontRole::Regular, l2, theme::type::small * s);
+        const float pad = 18.0f * s;
+        const float bw = r.width;
+        const float w = std::max(a.x, b.x) + 2 * pad + 24.0f * s + bw;
+        const float h = std::max(a.y + 4.0f * s + b.y, r.height) + 2 * pad * 0.8f;
+        const float lift = (1.0f - goalA) * 8.0f * s;
+        const Rectangle box{(static_cast<float>(GetScreenWidth()) - w) * 0.5f, top - lift, w, h};
+        ui::glass(box, 18.0f * s, goalA);
+        const float ty = box.y + (h - (a.y + 4.0f * s + b.y)) * 0.5f;
+        drawText(FontRole::SemiBold, l1, {box.x + pad, ty}, theme::type::body * s, ease::alpha(theme::cyan, goalA));
+        drawText(FontRole::Regular, l2, {box.x + pad, ty + a.y + 4.0f * s}, theme::type::small * s,
+                 ease::alpha(theme::textDim, goalA));
+        ui::button("hud:finish", {r.x, r.y - lift, r.width, r.height}, "Finish", false, false, goalA, true);
+        return;
+    }
+
     // Level hint for the first few seconds, then it fades away.
     const float hintA = ease::outCubic(std::clamp(time_ / 0.6f, 0.0f, 1.0f)) *
                         (1.0f - ease::outCubic(std::clamp((time_ - 6.0f) / 0.8f, 0.0f, 1.0f)));
@@ -417,6 +464,41 @@ void GameplayScene::drawToasts() {
         toast("The water has settled", "Press R to restart and try another route", stallA);
     } else if (!level_.hint.empty()) {
         toast(level_.hint, "1 Dig   2 Wall   3 Erase   Esc for controls", hintA);
+    }
+}
+
+Rectangle GameplayScene::finishButtonRect() const {
+    // Lives inside the goal toast, on its right (see drawToasts).
+    const float s = ui::scale();
+    const float top = hudBar_.y + hudBar_.height + 14.0f * s;
+    const Vector2 a = measureText(FontRole::SemiBold, "Goal reached", theme::type::body * s);
+    const Vector2 b = measureText(FontRole::Regular, "Let the water settle for a better score, or finish now", theme::type::small * s);
+    const float pad = 18.0f * s, bw = 128.0f * s, bh = 40.0f * s;
+    const float w = std::max(a.x, b.x) + 2 * pad + 24.0f * s + bw;
+    const float h = std::max(a.y + 4.0f * s + b.y, bh) + 2 * pad * 0.8f;
+    const float x = (static_cast<float>(GetScreenWidth()) - w) * 0.5f + w - pad - bw;
+    return {x, top + (h - bh) * 0.5f, bw, bh};
+}
+
+void GameplayScene::drawDrainShares() {
+    // Levels where drains need their own share: a small pill above each one
+    // showing how much it has and how much it needs.
+    const Score& sc = world_->score();
+    const float s = ui::scale();
+    for (size_t d = 0; d < sc.drainRequired.size(); ++d) {
+        if (sc.drainRequired[d] <= 0) continue;
+        const Rect& rect = world_->level().drains[d];
+        const int have = sc.total > 0 ? sc.drainSaved[d] * 100 / sc.total : 0;
+        const int need = static_cast<int>(level_.drainNeeds[d]);
+        const bool ok = sc.drainSaved[d] >= sc.drainRequired[d];
+        const std::string label = fmt("%d%% / %d%%", have, need);
+        const float fs = theme::type::small * s;
+        const Vector2 m = measureText(FontRole::SemiBold, label, fs);
+        const Vector2 c = view_.toScreen({(rect.min.x + rect.max.x) * 0.5f, rect.min.y});
+        const Rectangle pill{c.x - m.x * 0.5f - 12.0f * s, c.y - m.y - 22.0f * s, m.x + 24.0f * s, m.y + 10.0f * s};
+        DrawRectangleRounded(pill, 1.0f, 16, Color{12, 10, 28, 210});
+        DrawRectangleRoundedLinesEx(pill, 1.0f, 16, 1.0f, ok ? ease::alpha(theme::cyan, 0.8f) : Color{255, 255, 255, 40});
+        drawText(FontRole::SemiBold, label, {pill.x + 12.0f * s, pill.y + 5.0f * s}, fs, ok ? theme::cyan : theme::text);
     }
 }
 
@@ -449,7 +531,7 @@ void GameplayScene::drawPauseCard() {
     const Vector2 h1 = measureText(FontRole::Regular, help1, theme::type::caption * s);
     const Vector2 h2 = measureText(FontRole::Regular, help2, theme::type::caption * s);
     const float cw = std::max({w, h1.x + 2 * pad, h2.x + 2 * pad, sM.x + 2 * pad});
-    const float h = pad + tM.y + 4.0f * s + sM.y + 24.0f * s + 3 * btnH + 2 * gap + 24.0f * s + h1.y + 6.0f * s + h2.y + pad;
+    const float h = pad + tM.y + 4.0f * s + sM.y + 24.0f * s + 4 * btnH + 3 * gap + 24.0f * s + h1.y + 6.0f * s + h2.y + pad;
     const Rectangle r{(static_cast<float>(GetScreenWidth()) - cw) * 0.5f, (static_cast<float>(GetScreenHeight()) - h) * 0.5f, cw, h};
 
     beginCard(r);
@@ -460,18 +542,19 @@ void GameplayScene::drawPauseCard() {
     ui::textCentered(FontRole::Regular, sub, {r.x, y, r.width, sM.y}, theme::type::small * s, ease::alpha(theme::textDim, a));
     y += sM.y + 24.0f * s;
 
-    const char* labels[] = {"Resume", "Restart", "Main menu"};
-    if (IsKeyPressed(KEY_DOWN)) focus_ = (focus_ + 1) % 3;
-    if (IsKeyPressed(KEY_UP)) focus_ = (focus_ + 2) % 3;
-    const bool enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE);
-    for (int i = 0; i < 3; ++i) {
+    const char* labels[] = {"Resume", "Restart", "Levels", "Main menu"};
+    if (input::pressed(KEY_DOWN)) focus_ = (focus_ + 1) % 4;
+    if (input::pressed(KEY_UP)) focus_ = (focus_ + 3) % 4;
+    const bool enter = input::pressed(KEY_ENTER) || input::pressed(KEY_SPACE);
+    for (int i = 0; i < 4; ++i) {
         const Rectangle b{r.x + pad, y, r.width - 2 * pad, btnH};
         const auto res = ui::button(std::string("pause:") + labels[i], b, labels[i], focus_ == i, enter, a, i == 0);
         if (res.hovered) focus_ = i;
         if (res.clicked && card_ > 0.5f) {
             if (i == 0) mode_ = Mode::Playing;
             if (i == 1) restart();
-            if (i == 2) toMenu();
+            if (i == 2) app_.openLevelSelect();
+            if (i == 3) toMenu();
         }
         y += btnH + gap;
     }
@@ -486,26 +569,29 @@ void GameplayScene::drawPauseCard() {
 void GameplayScene::drawResultCard() {
     const float s = ui::scale();
     const float a = ease::outCubic(card_);
-    const bool won = world_->status() == LevelStatus::Won;
+    const Outcome& o = world_->outcome(); // frozen: nothing here can change
+    const bool won = o.status == LevelStatus::Won;
     const float pad = 34.0f * s;
     const float w = 470.0f * s;
 
-    const std::string title = won ? "Level complete" : "Out of water";
-    const std::string sub = won ? level_.name : std::string("Not enough water can reach the drain");
+    const std::string title = allComplete_ ? "All levels complete" : won ? "Level complete" : "Out of water";
+    const std::string sub = allComplete_ ? fmt("%s  \xC2\xB7  %d of %d stars in total", level_.name.c_str(), app_.progress().totalStars(), 3 * app_.levelCount())
+                            : won        ? level_.name
+                                         : std::string("Not enough water can reach the drain");
     const Vector2 tM = measureText(FontRole::SemiBold, title, theme::type::title * s);
     const Vector2 sM = measureText(FontRole::Regular, sub, theme::type::small * s);
     const float starR = 25.0f * s;
+    const float cap = theme::type::caption * s;
     const float starsH = won ? starR * 2.0f + 26.0f * s : 0.0f;
 
     // Stats: label over value, three columns.
-    const Score& sc = world_->score();
-    const std::string saved = fmt("%d%%", static_cast<int>(std::floor(sc.savedFraction() * 100.0f)));
+    const std::string saved = fmt("%d%%", o.percent);
     const std::string goalV = fmt("%d%%", static_cast<int>(level_.winPercent));
-    const std::string inkV = world_->inkBudget() > 0 ? fmt("%.1f m", world_->inkMetres(world_->inkUsed())) : std::string("none");
-    const float valSize = 26.0f * s, cap = theme::type::caption * s;
+    const std::string inkV = world_->inkBudget() > 0 ? fmt("%.1f m", world_->inkMetres(o.inkUsed)) : std::string("none");
+    const float valSize = 26.0f * s;
     const float statH = measureText(FontRole::Medium, "X", cap, 0.14f).y + 4.0f * s + measureText(FontRole::SemiBold, "0", valSize).y;
 
-    const bool hasNext = won && app_.levelExists(levelIndex_ + 1);
+    const bool hasNext = won && !allComplete_ && app_.levelExists(levelIndex_ + 1);
     std::vector<std::string> buttons{"Retry"};
     if (hasNext) buttons.push_back("Next");
     buttons.push_back("Menu");
@@ -513,7 +599,7 @@ void GameplayScene::drawResultCard() {
     // Tell the player what the next star needs.
     std::string starHint;
     if (won && stars_ < 3) {
-        const bool thrifty = world_->inkBudget() <= 0 || world_->inkUsed() * 2 <= world_->inkBudget();
+        const bool thrifty = world_->inkBudget() <= 0 || o.inkUsed * 2 <= world_->inkBudget();
         if (stars_ == 1) starHint = fmt("Save %d%% for the second star", static_cast<int>(std::ceil(level_.twoStarPercent)));
         else if (!thrifty) starHint = fmt("Use at most half the ink and save %d%% for three stars",
                                           static_cast<int>(std::ceil(level_.threeStarPercent)));
@@ -523,12 +609,23 @@ void GameplayScene::drawResultCard() {
     const float hintH = starHint.empty() ? 0.0f : hintM.y + 14.0f * s;
 
     const float cw = std::max({w, tM.x + 2 * pad, sM.x + 2 * pad, hintM.x + 2 * pad});
-    const float h = pad + tM.y + 4.0f * s + sM.y + 24.0f * s + starsH + hintH + statH + 28.0f * s + btnH + pad;
+    const float bestH = newBest_ ? measureText(FontRole::SemiBold, "NEW BEST", cap, 0.16f).y + 14.0f * s : 0.0f;
+    const float h = pad + bestH + tM.y + 4.0f * s + sM.y + 24.0f * s + starsH + hintH + statH + 28.0f * s + btnH + pad;
     const Rectangle r{(static_cast<float>(GetScreenWidth()) - cw) * 0.5f, (static_cast<float>(GetScreenHeight()) - h) * 0.5f, cw, h};
 
     beginCard(r);
     ui::glass(r, 28.0f * s, a);
     float y = r.y + pad;
+    if (newBest_) {
+        // "New best" pill above the title, fading in after the stars.
+        const float ba = a * std::clamp((resultTime_ - 1.0f) / 0.4f, 0.0f, 1.0f);
+        const Vector2 bm = measureText(FontRole::SemiBold, "NEW BEST", cap, 0.16f);
+        const Rectangle pill{r.x + (r.width - bm.x) * 0.5f - 12.0f * s, y - 4.0f * s, bm.x + 24.0f * s, bm.y + 8.0f * s};
+        ui::glow(pill, pill.height * 0.5f, 10.0f * s, ease::alpha(theme::cyan, 0.35f * ba), 0.0f);
+        DrawRectangleRounded(pill, 1.0f, 16, ease::alpha(Color{62, 232, 255, 40}, ba));
+        drawText(FontRole::SemiBold, "NEW BEST", {pill.x + 12.0f * s, pill.y + 4.0f * s}, cap, ease::alpha(theme::cyan, ba), 0.16f);
+        y += bestH;
+    }
     ui::textCentered(FontRole::SemiBold, title, {r.x, y, r.width, tM.y}, theme::type::title * s,
                      ease::alpha(won ? theme::text : theme::danger, a));
     y += tM.y + 4.0f * s;
@@ -570,9 +667,9 @@ void GameplayScene::drawResultCard() {
     y += statH + 28.0f * s;
 
     const int n = static_cast<int>(buttons.size());
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_DOWN)) focus_ = (focus_ + 1) % n;
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_UP)) focus_ = (focus_ + n - 1) % n;
-    const bool enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE);
+    if (input::pressed(KEY_RIGHT) || input::pressed(KEY_DOWN)) focus_ = (focus_ + 1) % n;
+    if (input::pressed(KEY_LEFT) || input::pressed(KEY_UP)) focus_ = (focus_ + n - 1) % n;
+    const bool enter = input::pressed(KEY_ENTER) || input::pressed(KEY_SPACE);
     const float bw = (r.width - 2 * pad - btnGap * static_cast<float>(n - 1)) / static_cast<float>(n);
     for (int i = 0; i < n; ++i) {
         const Rectangle b{r.x + pad + (bw + btnGap) * static_cast<float>(i), y, bw, btnH};
@@ -583,7 +680,7 @@ void GameplayScene::drawResultCard() {
         if (res.clicked && card_ > 0.5f) {
             const std::string& l = buttons[static_cast<size_t>(i)];
             if (l == "Retry") restart();
-            if (l == "Next") app_.goTo(app_.makeLevel(levelIndex_ + 1));
+            if (l == "Next") app_.startLevel(levelIndex_ + 1);
             if (l == "Menu") toMenu();
         }
     }
@@ -632,6 +729,7 @@ void GameplayScene::drawDebug() {
 }
 
 void GameplayScene::drawUi() {
+    drawDrainShares();
     drawHud();
     drawToasts();
     if (showDebug_) drawDebug();
@@ -639,7 +737,7 @@ void GameplayScene::drawUi() {
         const float a = ease::outCubic(card_);
         app_.renderer().drawBackdrop(a);
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ease::alpha(Color{5, 4, 13, 255}, 0.35f * a));
-        if (mode_ == Mode::Result || (mode_ == Mode::Playing && world_->finished())) drawResultCard();
+        if (mode_ == Mode::Result) drawResultCard();
         else drawPauseCard();
     }
 }

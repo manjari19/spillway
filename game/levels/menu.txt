@@ -1,14 +1,28 @@
-# Backdrop for the main menu. The text column on the left sits over open
-# sky and a low plateau; a dirt ridge keeps the water in a basin on the right
-# half, where it sloshes as gravity sways. Not a playable level (no drain).
+# Backdrop for the main menu: a living spillway.
+# A stream pours from an outlet in the right-hand cliff into a basin held by
+# an obsidian dam. The basin overflows across the dam's curved spillway
+# crest, runs down its face and into a glowing drain at its foot. The menu
+# recycles drained particles back to the outlet, so it runs forever.
+# Everything is on the right and bottom; the left stays open for the menu.
+# Not a playable level.
 
 name  Menu
 size  16 9
 win   100
 
-dirt  poly 0 9  0 7.2  3.8 7.3  5.0 6.6  6.0 5.3  6.8 4.8  7.5 5.2  8.5 6.8  10 7.8  12 8.1  14 7.5  15.2 6.3  16 5.0  16 9
-rock  circle 6.7 5.6 0.5
-rock  circle 11.6 8.5 0.5
 rock  rect 0 8.75 16 9
 
-water rect 7.9 5.7 15.8 8.2
+# Right-hand cliff with the outlet ledge.
+rock  poly 15.2 0  16 0  16 9  14.9 9  14.9 2.9  15.2 2.6
+# Basin floor (dirt) between the dam and the cliff.
+dirt  poly 10.6 9  10.6 6.3  12.5 6.1  14.9 6.0  14.9 9
+
+# The dam: an obsidian ogee spillway. Its crest is the lowest point of the
+# basin's rim, so the overflow always pours over it to the left.
+rock  poly 8.3 8.75  8.3 8.2  8.7 7.6  9.1 6.6  9.4 5.6  9.7 4.95  10.1 4.7  10.5 4.75  10.8 5.0  10.8 8.75
+
+# Ground at the dam's foot, sloping into the drain.
+dirt  poly 5.4 8.75  5.4 8.45  6.6 8.35  8.3 8.6  8.3 8.75
+
+water rect 10.85 4.9 14.85 5.95
+drain rect 6.4 8.25 8.25 8.75

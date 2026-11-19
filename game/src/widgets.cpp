@@ -7,6 +7,7 @@
 #include <map>
 
 #include "ease.h"
+#include "input.h"
 #include "theme.h"
 
 namespace ui {
@@ -68,7 +69,7 @@ ButtonResult button(const std::string& id, Rectangle r, const std::string& label
                     float alpha, bool primary, bool enabled) {
     const float s = scale();
     ButtonResult res;
-    res.hovered = enabled && CheckCollisionPointRec(GetMousePosition(), r);
+    res.hovered = enabled && CheckCollisionPointRec(input::mouse(), r);
     const bool hot = enabled && (res.hovered || focused);
     const float h = animate("btn:" + id, hot ? 1.0f : 0.0f);
 
@@ -88,7 +89,7 @@ ButtonResult button(const std::string& id, Rectangle r, const std::string& label
     const Color tc = !enabled ? theme::textMuted : ease::mix(primary ? theme::text : theme::textDim, theme::text, h);
     textCentered(FontRole::Medium, label, b, theme::type::body * s, ease::alpha(tc, alpha));
 
-    res.clicked = enabled && ((res.hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) || (focused && activate));
+    res.clicked = enabled && ((res.hovered && input::mousePressed(MOUSE_BUTTON_LEFT)) || (focused && activate));
     return res;
 }
 

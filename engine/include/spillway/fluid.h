@@ -43,6 +43,17 @@ struct FluidParams {
 
 class Terrain;
 
+// Same fluid, different particle count (the game's water-quality setting).
+// Rest density is a particle *number* density, so scaling it by m packs m
+// times more particles into the same volume; pressure forces stay the same
+// size (both P and the neighbour sum scale by m, and a = F / rho), while the
+// viscosity sum gains m times more neighbours, so its strength is divided by m.
+inline FluidParams withParticleScale(FluidParams p, float m) {
+    p.targetDensity *= m;
+    p.viscosityStrength /= m;
+    return p;
+}
+
 enum class NeighbourSearch { Grid, BruteForce };
 
 // Mouse-style interaction: pulls particles toward (strength > 0) or pushes them

@@ -45,6 +45,9 @@ private:
     void drawBrush();
     void drawHud();
     void drawToasts();
+    void drawDrainShares();
+    void enterResult();
+    Rectangle finishButtonRect() const;
     void drawPauseCard();
     void drawResultCard();
     void drawDebug();
@@ -66,6 +69,9 @@ private:
     float card_ = 0.0f;        // card animation 0..1
     float resultTime_ = 0.0f;  // seconds since the result card opened
     int stars_ = 0;
+    bool newBest_ = false;      // this result beat the saved record
+    bool allComplete_ = false;  // just won the last level with every level beaten
+    float particleScale_ = 1.0f;
     int focus_ = 0;            // keyboard focus within a card
     float meter_ = 0.0f;       // eased saved fraction
     float ink_ = 1.0f;         // eased ink fraction

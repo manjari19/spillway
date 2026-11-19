@@ -1,0 +1,7 @@
+# Level 4 - Bedrock
+# Open the dirt rim, and draw one wall from inside the shelf's face (so no
+# water slips between them) out over the top of the rock ramp. The water
+# lands on the right-hand floor and slides down to the drain.
+expect won 3
+at 30 wall 0.10  4.45 3.70  9.00 4.60
+at 30 dig 0.30   4.30 0.90  4.30 3.05

@@ -41,12 +41,18 @@ TEST_CASE("All water into a drain wins", "[world][score]") {
     CHECK(w.score().saved >= w.score().required);
 }
 
-TEST_CASE("All water into a pit loses as soon as winning is impossible", "[world][score]") {
+TEST_CASE("All water into a pit loses, but only once the water has settled", "[world][score]") {
     World w(splitLevel(0.01f)); // a sliver of drain, the rest is pit
-    runUntilDone(w, 600);
+    bool sawImpossibleWhileFlowing = false;
+    for (int s = 0; s < 900 && !w.finished(); ++s) {
+        w.step();
+        if (!w.finished() && w.goalImpossible()) sawImpossibleWhileFlowing = true;
+    }
+    // Winning became impossible while water was still falling, but the loss
+    // was only declared after it settled.
+    CHECK(sawImpossibleWhileFlowing);
     CHECK(w.status() == LevelStatus::Lost);
-    // Lost exactly when saved + alive dropped below required.
-    CHECK(w.score().saved + static_cast<int>(w.fluid().size()) < w.score().required);
+    CHECK(w.outcome().stars == 0);
 }
 
 TEST_CASE("Drain and pit counting is exact and never double counts", "[world][score]") {
@@ -64,6 +70,63 @@ TEST_CASE("Drain and pit counting is exact and never double counts", "[world][sc
     CHECK(w.fluid().size() == 0);
     CHECK(w.score().saved > 0);
     CHECK(w.score().lost > 0);
+}
+
+TEST_CASE("Goal reached does not end the level; the final score is computed after settling and frozen",
+          "[world][score]") {
+    // All water ends up in the drain, but slowly: the goal (50%) is crossed
+    // long before the last of it arrives.
+    World w(splitLevel(6.0f));
+    int goalStep = -1, goalSaved = 0;
+    for (int s = 0; s < 2000 && !w.finished(); ++s) {
+        w.step();
+        if (goalStep < 0 && w.goalReached()) {
+            goalStep = s;
+            goalSaved = w.score().saved;
+            CHECK_FALSE(w.finished()); // keeps running past the goal
+        }
+    }
+    REQUIRE(goalStep >= 0);
+    REQUIRE(w.finished());
+    const Outcome result = w.outcome();
+    CHECK(result.status == LevelStatus::Won);
+    // The result was taken after the water kept draining past the goal.
+    CHECK(result.score.saved > goalSaved);
+    CHECK(result.percent >= 90);
+    CHECK(result.stars == starRating(w.level(), result.score, result.inkUsed, w.inkBudget()));
+
+    // Frozen: further steps change nothing, not the score, not the water.
+    const std::vector<Vec2> frozen(w.fluid().positions().begin(), w.fluid().positions().end());
+    for (int s = 0; s < 300; ++s) w.step();
+    CHECK(w.outcome().score.saved == result.score.saved);
+    CHECK(w.outcome().percent == result.percent);
+    CHECK(w.outcome().stars == result.stars);
+    CHECK(w.score().saved == result.score.saved);
+    CHECK(std::vector<Vec2>(w.fluid().positions().begin(), w.fluid().positions().end()) == frozen);
+}
+
+TEST_CASE("Finish ends the level immediately, but only once the goal is reached", "[world][score]") {
+    World w(splitLevel(6.0f));
+    CHECK_FALSE(w.finish()); // nothing saved yet
+    while (!w.goalReached()) w.step();
+    REQUIRE(w.finish());
+    CHECK(w.finished());
+    CHECK(w.outcome().status == LevelStatus::Won);
+    const int saved = w.outcome().score.saved;
+    for (int s = 0; s < 120; ++s) w.step();
+    CHECK(w.outcome().score.saved == saved);
+}
+
+TEST_CASE("Per-drain shares must all be met", "[world][score]") {
+    // Two drains side by side; water falls mostly into the left one.
+    LevelDesc l = splitLevel(6.0f);
+    l.drains = {{{0, 3.5f}, {5.0f, 4}}, {{5.0f, 3.5f}, {6, 4}}};
+    l.drainNeeds = {0.0f, 40.0f}; // the right drain alone needs 40%
+    World w(l);
+    for (int s = 0; s < 1500 && !w.finished(); ++s) w.step();
+    REQUIRE(w.finished());
+    CHECK(w.outcome().score.saved >= w.score().required); // plenty saved overall...
+    CHECK(w.status() == LevelStatus::Lost);               // ...but not in the right drain
 }
 
 TEST_CASE("Status latches once the level is decided", "[world][score]") {
@@ -182,7 +245,7 @@ TEST_CASE("Default star thresholds come from the win percentage", "[level]") {
 TEST_CASE("Won levels finish once the flow settles", "[world]") {
     World w(splitLevel(6.0f));
     int s = 0;
-    while (!w.finished() && s < 1200) { w.step(); ++s; }
+    while (!w.finished() && s < 1500) { w.step(); ++s; }
     CHECK(w.finished());
     CHECK(w.status() == LevelStatus::Won);
     CHECK(w.stars() >= 1);

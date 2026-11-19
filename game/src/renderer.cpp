@@ -164,13 +164,15 @@ void Renderer::endWorld(bool wantBackdrop) {
     const float threshold = 0.42f, knee = 0.25f;
     SetShaderValue(as.bright, as.brightThreshold, &threshold, SHADER_UNIFORM_FLOAT);
     SetShaderValue(as.bright, as.brightKnee, &knee, SHADER_UNIFORM_FLOAT);
-    blit(scene_.texture, bloomA_, &as.bright);
-    blurPingPong(bloomA_, bloomB_, 3);
+    if (bloom_) {
+        blit(scene_.texture, bloomA_, &as.bright);
+        blurPingPong(bloomA_, bloomB_, 3);
+    }
 
     // Composite into the frame.
     BeginTextureMode(frame_);
     BeginShaderMode(as.composite);
-    const float strength = 0.8f, vignette = 0.28f;
+    const float strength = bloom_ ? 0.8f : 0.0f, vignette = 0.28f;
     const float res[2] = {static_cast<float>(rw_), static_cast<float>(rh_)};
     SetShaderValue(as.composite, as.compositeStrength, &strength, SHADER_UNIFORM_FLOAT);
     SetShaderValue(as.composite, as.compositeVignette, &vignette, SHADER_UNIFORM_FLOAT);
@@ -226,7 +228,8 @@ void Renderer::present(float previousSceneAlpha) {
     EndDrawing();
 }
 
-void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const spillway::Vec2> vel, const View& view) {
+void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const spillway::Vec2> vel, const View& view,
+                         float densityScale) {
     Assets& as = assets();
     // 1. Splat one smooth kernel per particle into the float field target.
     //    The kernel radius is ~2.5x the particle spacing (0.135 m), so every
@@ -253,7 +256,7 @@ void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const sp
     bindLayer(scene_, true);
     WaterShader& ws = as.water;
     const float texel[2] = {1.0f / static_cast<float>(rw_), 1.0f / static_cast<float>(rh_)};
-    const float threshold = kWaterThreshold, rim = 1.6f * dpi_, t = static_cast<float>(GetTime());
+    const float threshold = kWaterThreshold * densityScale, rim = 1.6f * dpi_, t = static_cast<float>(GetTime());
     SetShaderValue(ws.shader, ws.texel, texel, SHADER_UNIFORM_VEC2);
     SetShaderValue(ws.shader, ws.threshold, &threshold, SHADER_UNIFORM_FLOAT);
     SetShaderValue(ws.shader, ws.rimPx, &rim, SHADER_UNIFORM_FLOAT);

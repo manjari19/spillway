@@ -47,9 +47,12 @@ public:
     // Draws the blurred world (from endWorld(true)) over the whole screen.
     void drawBackdrop(float alpha);
 
-    // Metaball water. Call between beginWorld/endWorld.
+    // Metaball water. Call between beginWorld/endWorld. densityScale is the
+    // water-quality particle multiplier (more particles = denser field).
     void drawWater(std::span<const spillway::Vec2> positions, std::span<const spillway::Vec2> velocities,
-                   const View& view);
+                   const View& view, float densityScale = 1.0f);
+
+    void setBloom(bool on) { bloom_ = on; }
 
     // Normal alpha blending that keeps the destination alpha at 1 (raylib's
     // default would make translucent UI punch holes in an opaque target).
@@ -73,4 +76,5 @@ private:
     RenderTexture2D bloomA_{}, bloomB_{};
     RenderTexture2D backA_{}, backB_{};
     bool haveBackdrop_ = false;
+    bool bloom_ = true;
 };

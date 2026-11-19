@@ -9,6 +9,8 @@ add_library(spillway_engine STATIC
   src/level.cpp
   src/world.cpp
   src/marching_squares.cpp
+  src/json.cpp
+  src/progress.cpp
 )
 target_include_directories(spillway_engine PUBLIC include)
 target_compile_features(spillway_engine PUBLIC cxx_std_20)

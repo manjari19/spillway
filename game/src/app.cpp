@@ -9,11 +9,14 @@
 #include "assets.h"
 #include "ease.h"
 #include "gameplay_scene.h"
+#include "input.h"
+#include "level_select_scene.h"
 #include "menu_scene.h"
+#include "settings_scene.h"
 #include "theme.h"
 #include "widgets.h"
 
-// GLFW is compiled into raylib; we only need two of its functions to read the
+// GLFW is compiled into raylib; we only need one of its functions to read the
 // real window size.
 extern "C" {
 struct GLFWwindow;
@@ -25,8 +28,8 @@ namespace {
 
 // macOS may shrink a window that does not fit on screen while it is being
 // created, before raylib starts listening for resizes. raylib then keeps the
-// requested size, the viewport no longer matches the framebuffer, and a band
-// at the top of the window stays black. Re-sync raylib with the real size.
+// requested size and a band of the window stays unpainted. Re-sync raylib
+// with the real size.
 void syncWindowSize() {
     GLFWwindow* w = glfwGetCurrentContext();
     if (!w) return;
@@ -35,52 +38,68 @@ void syncWindowSize() {
     if (ww > 0 && wh > 0 && (ww != GetScreenWidth() || wh != GetScreenHeight())) SetWindowSize(ww, wh);
 }
 
-// Shown instead of the game when assets fail to load.
-class ErrorScene : public Scene {
-public:
-    explicit ErrorScene(std::string msg) : msg_(std::move(msg)) {}
-    void update(float) override {}
-    void drawWorld() override {}
-    void drawUi() override {
-        const float s = ui::scale();
-        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), theme::bgBottom);
-        DrawText("Spillway could not start", static_cast<int>(40 * s), static_cast<int>(40 * s), static_cast<int>(30 * s), theme::danger);
-        DrawText(msg_.c_str(), static_cast<int>(40 * s), static_cast<int>(90 * s), static_cast<int>(18 * s), theme::text);
-    }
-
-private:
-    std::string msg_;
-};
+void saveScreenshot(Renderer& r, const std::string& path) {
+    Image img = r.screenshot();
+    ExportImage(img, path.c_str());
+    UnloadImage(img);
+}
 
 } // namespace
 
-std::string App::levelPath(int index) const {
-    char name[32];
-    std::snprintf(name, sizeof name, "level%02d.txt", index + 1);
-    return assets().levelDir + name;
+void App::loadLevels() {
+    levels_.clear();
+    for (int i = 1; i <= 99; ++i) {
+        char name[32];
+        std::snprintf(name, sizeof name, "level%02d.txt", i);
+        const std::string path = assets().levelDir + name;
+        if (!FileExists(path.c_str())) break;
+        auto r = spillway::loadLevelFile(path);
+        if (!r) {
+            std::fprintf(stderr, "Spillway: %s\n", r.error.c_str());
+            break;
+        }
+        levels_.push_back(*r.level);
+    }
+    progress_.ensureSize(levelCount());
 }
 
-bool App::levelExists(int index) const { return index >= 0 && FileExists(levelPath(index).c_str()); }
+void App::openMenu() { goTo(std::make_unique<MenuScene>(*this)); }
+void App::openLevelSelect() { goTo(std::make_unique<LevelSelectScene>(*this)); }
+void App::openSettings() { goTo(std::make_unique<SettingsScene>(*this)); }
+void App::startLevel(int index) {
+    if (levelExists(index)) goTo(std::make_unique<GameplayScene>(*this, index, level(index)));
+}
 
-std::unique_ptr<Scene> App::makeMenu() { return std::make_unique<MenuScene>(*this); }
+bool App::record(int level, int stars, int percent) {
+    const bool best = progress_.record(level, stars, percent);
+    saveProgress(progress_);
+    return best;
+}
 
-std::unique_ptr<Scene> App::makeLevel(int index) {
-    auto result = spillway::loadLevelFile(levelPath(index));
-    if (!result) {
-        std::fprintf(stderr, "%s\n", result.error.c_str());
-        return std::make_unique<ErrorScene>(result.error);
+void App::resetProgress() {
+    progress_ = {};
+    progress_.ensureSize(levelCount());
+    saveProgress(progress_);
+}
+
+void App::applySettings() {
+    renderer_.setBloom(settings_.bloom);
+    // Borderless fullscreen is the reliable kind on every desktop OS.
+    if (settings_.fullscreen != fullscreenApplied_) {
+        ToggleBorderlessWindowed();
+        fullscreenApplied_ = settings_.fullscreen;
     }
-    return std::make_unique<GameplayScene>(*this, index, *result.level);
+    saveSettings(settings_);
 }
 
 int App::run() {
-    // Developer hooks for checking layouts without clicking around:
-    //   SPILLWAY_SCREENSHOT=/path/out.png   save one frame (~2 s in) and quit
-    //   SPILLWAY_SIZE=1440x900              window size
-    //   SPILLWAY_SHOT_SCENE=menu|game|pause|complete
-    //   SPILLWAY_MOUSE=640,360              pin the mouse (logical px)
-    //   SPILLWAY_DEBUG=1                    show the debug overlay
-    //   SPILLWAY_SHOT_TIME=0.9              capture at this many seconds instead of frame 150
+    // Developer hooks:
+    //   SPILLWAY_SIZE=1440x900    window size
+    //   SPILLWAY_INPUT=...        scripted input (see input.h), incl. screenshots
+    //   SPILLWAY_SAVE_DIR=...     use a different save folder
+    // The older single-shot hook still works for quick checks:
+    //   SPILLWAY_SCREENSHOT=/path.png [SPILLWAY_SHOT_SCENE=menu|game|flow|pause|complete|dig]
+    //   [SPILLWAY_SHOT_TIME=seconds] [SPILLWAY_MOUSE=x,y] [SPILLWAY_DEBUG=1]
     const char* shotPath = std::getenv("SPILLWAY_SCREENSHOT");
     const std::string shotScene = std::getenv("SPILLWAY_SHOT_SCENE") ? std::getenv("SPILLWAY_SHOT_SCENE") : "menu";
     int width = 1280, height = 720;
@@ -88,11 +107,12 @@ int App::run() {
     bool pinMouse = false;
     Vector2 pinned{};
     if (const char* m = std::getenv("SPILLWAY_MOUSE")) pinMouse = std::sscanf(m, "%f,%f", &pinned.x, &pinned.y) == 2;
+    if (const char* script = std::getenv("SPILLWAY_INPUT")) input::loadScript(script);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(width, height, "Spillway");
     SetWindowMinSize(960, 540);
-    SetExitKey(KEY_NULL); // Esc is the pause key
+    SetExitKey(KEY_NULL); // Esc is the pause / back key
     SetTargetFPS(144);
     // Everything here is 2D; triangle winding should never hide geometry.
     rlDisableBackfaceCulling();
@@ -122,34 +142,33 @@ int App::run() {
         return 1;
     }
     renderer_.init();
-    if (shotPath) std::printf("screen %dx%d render %dx%d dpi %.2f\n", GetScreenWidth(), GetScreenHeight(),
-                              GetRenderWidth(), GetRenderHeight(), renderer_.dpi());
+    loadLevels();
+    progress_ = loadProgress();
+    progress_.ensureSize(levelCount());
+    settings_ = loadSettings();
+    applySettings();
 
-    if (!scene_) {
-        if (shotScene == "menu") {
-            scene_ = makeMenu();
-        } else {
-            scene_ = makeLevel(0);
-            if (auto* g = dynamic_cast<GameplayScene*>(scene_.get())) {
-                if (shotScene == "pause") g->debugPause();
-                if (shotScene == "complete") g->debugAutoSolve();
-                if (shotScene == "flow") g->debugMidLevel();
-                if (shotScene == "dig") g->debugDigSoon();
-                if (std::getenv("SPILLWAY_DEBUG")) g->debugOverlay(true);
-                if (pinMouse) g->debugCursor(true);
-            }
-        }
+    if (shotPath && shotScene != "menu") {
+        scene_ = std::make_unique<GameplayScene>(*this, 0, level(0));
+        auto* g = static_cast<GameplayScene*>(scene_.get());
+        if (shotScene == "pause") g->debugPause();
+        if (shotScene == "complete") g->debugAutoSolve();
+        if (shotScene == "flow") g->debugMidLevel();
+        if (shotScene == "dig") g->debugDigSoon();
+        if (std::getenv("SPILLWAY_DEBUG")) g->debugOverlay(true);
+        if (pinMouse) g->debugCursor(true);
+    } else {
+        scene_ = std::make_unique<MenuScene>(*this);
     }
 
     const double shotTime = std::getenv("SPILLWAY_SHOT_TIME") ? std::atof(std::getenv("SPILLWAY_SHOT_TIME")) : -1.0;
     const double startTime = GetTime();
     int frame = 0;
     while (!WindowShouldClose() && !quit_) {
-        // SPILLWAY_MAXIMIZE=1: maximise the window shortly after start, to test
-        // that resizes never leave unpainted (black) bands.
-        if (frame == 20 && std::getenv("SPILLWAY_MAXIMIZE")) MaximizeWindow();
         syncWindowSize();
         renderer_.ensureSize();
+        input::beginFrame(GetTime() - startTime);
+        if (input::quitRequested()) break;
         if (pinMouse) SetMousePosition(static_cast<int>(pinned.x), static_cast<int>(pinned.y));
         const float dt = std::min(GetFrameTime(), 1.0f / 20.0f);
 
@@ -160,10 +179,21 @@ int App::run() {
         renderer_.endWorld(scene_->wantsBackdrop());
         renderer_.beginUi();
         scene_->drawUi();
+        if (settings_.showFps) {
+            const float s = ui::scale();
+            const std::string fps = std::to_string(GetFPS()) + " fps";
+            const Vector2 m = measureText(FontRole::Mono, fps, 12.0f * s);
+            drawText(FontRole::Mono, fps, {static_cast<float>(GetScreenWidth()) - m.x - 12.0f * s,
+                                           static_cast<float>(GetScreenHeight()) - m.y - 10.0f * s},
+                     12.0f * s, theme::textDim);
+        }
         renderer_.endUi();
 
         fade_ = std::max(0.0f, fade_ - dt / 0.5f);
         renderer_.present(ease::inOutCubic(fade_));
+
+        std::string scriptShot;
+        while (input::takeShot(scriptShot)) saveScreenshot(renderer_, scriptShot);
 
         if (pending_) {
             renderer_.captureSnapshot();
@@ -174,18 +204,7 @@ int App::run() {
         ++frame;
         const bool shotDue = shotTime > 0.0 ? GetTime() - startTime >= shotTime : frame == 150;
         if (shotPath && shotDue) {
-            // SPILLWAY_SHOT_WINDOW=1 reads the real window framebuffer instead
-            // of the offscreen frame (to check letterboxing / presentation).
-            Image img = renderer_.screenshot();
-            if (std::getenv("SPILLWAY_SHOT_WINDOW")) {
-                // Read back the real window framebuffer at its true size.
-                UnloadImage(img);
-                const int w = renderer_.renderWidth(), h = renderer_.renderHeight();
-                unsigned char* px = rlReadScreenPixels(w, h);
-                img = Image{px, w, h, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
-            }
-            ExportImage(img, shotPath);
-            UnloadImage(img);
+            saveScreenshot(renderer_, shotPath);
             break;
         }
     }

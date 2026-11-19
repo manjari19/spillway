@@ -1,0 +1,10 @@
+# Level 3 - Fork
+# The basin tilts left, so the channel leaving from its low left corner gets
+# the most water. Route THAT channel to the right drain (under the rock
+# wedge), and start the left drain's channel higher up the left wall so it
+# only takes the top of the water. Entrances between y = 2.8 and 3.2 work.
+expect won 3
+at 30 dig 0.25  5.50 3.00  2.60 6.90
+at 30 dig 0.25  5.70 3.45  6.90 5.80
+at 30 dig 0.25  6.90 5.80  9.40 6.10
+at 30 dig 0.25  9.40 6.10  13.40 6.90

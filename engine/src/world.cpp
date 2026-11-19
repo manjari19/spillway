@@ -5,11 +5,11 @@
 
 namespace spillway {
 
-World::World(const LevelDesc& level, const SimulationConfig& config)
+World::World(const LevelDesc& level, const SimulationConfig& config, float particleScale)
     : config_(config),
       level_(level),
       terrain_(buildTerrain(level)),
-      fluid_(FluidParams{}, {0.0f, 0.0f}, terrain_.extent()),
+      fluid_(withParticleScale(FluidParams{}, particleScale), {0.0f, 0.0f}, terrain_.extent()),
       timestep_(config.stepSeconds, config.maxStepsPerFrame) {
     fluid_.setTerrain(&terrain_);
 
@@ -27,6 +27,11 @@ World::World(const LevelDesc& level, const SimulationConfig& config)
 
     score_.total = static_cast<int>(fluid_.size());
     score_.required = static_cast<int>(std::ceil(score_.total * level_.winPercent / 100.0 - 1e-9));
+    for (size_t d = 0; d < level_.drains.size(); ++d) {
+        const float need = d < level_.drainNeeds.size() ? level_.drainNeeds[d] : 0.0f;
+        score_.drainSaved.push_back(0);
+        score_.drainRequired.push_back(static_cast<int>(std::ceil(score_.total * need / 100.0 - 1e-9)));
+    }
 
     const float c = terrain_.cellSize();
     inkBudget_ = static_cast<int>(std::lround(level_.inkMetres * kInkReferenceWallWidth / (c * c)));
@@ -43,10 +48,34 @@ int starRating(const LevelDesc& level, const Score& score, int inkUsed, int inkB
     return stars;
 }
 
-bool World::finished() const {
-    if (status_ == LevelStatus::Lost) return true;
-    if (status_ != LevelStatus::Won) return false;
-    return fluid_.size() == 0 || secondsSinceSave_ >= kSettleSeconds;
+bool World::goalReached() const {
+    if (score_.saved < score_.required) return false;
+    for (size_t d = 0; d < score_.drainSaved.size(); ++d)
+        if (score_.drainSaved[d] < score_.drainRequired[d]) return false;
+    return true;
+}
+
+bool World::goalImpossible() const {
+    const int alive = static_cast<int>(fluid_.size());
+    if (score_.saved + alive < score_.required) return true;
+    for (size_t d = 0; d < score_.drainSaved.size(); ++d)
+        if (score_.drainSaved[d] + alive < score_.drainRequired[d]) return true;
+    return false;
+}
+
+void World::finalize(LevelStatus status) {
+    outcome_.status = status;
+    outcome_.score = score_;
+    outcome_.percent = score_.total > 0 ? (score_.saved * 100) / score_.total : 0;
+    outcome_.inkUsed = inkUsed();
+    outcome_.stars = status == LevelStatus::Won ? starRating(level_, score_, inkUsed(), inkBudget_) : 0;
+    stalled_ = false;
+}
+
+bool World::finish() {
+    if (finished() || !goalReached()) return false;
+    finalize(LevelStatus::Won);
+    return true;
 }
 
 float World::inkMetres(int cells) const {
@@ -61,6 +90,8 @@ int World::update(double frameSeconds) {
 }
 
 void World::step() {
+    // A finished level is frozen: the result on screen must never change.
+    if (finished()) return;
     const auto t0 = std::chrono::steady_clock::now();
 
     // 1. Player edits, in input order.
@@ -71,7 +102,7 @@ void World::step() {
         for (const Edit& e : pending_) applyEdit(e);
         pending_.clear();
         everEdited_ = true;
-        quietSeconds_ = 0.0;
+        secondsSinceActivity_ = 0.0;
     }
     lastSdfNodes_ = terrain_.updateSdf();
 
@@ -156,9 +187,10 @@ void World::collectDrainsAndPits() {
         // Each particle is removed the moment it is counted, so it can never
         // be counted twice.
         bool counted = false;
-        for (const Rect& d : level_.drains) {
-            if (d.contains(pos[i])) {
+        for (size_t d = 0; d < level_.drains.size(); ++d) {
+            if (level_.drains[d].contains(pos[i])) {
                 ++score_.saved;
+                ++score_.drainSaved[d];
                 ++savedNow;
                 counted = true;
                 events_.drained.push_back(pos[i]);
@@ -180,26 +212,24 @@ void World::collectDrainsAndPits() {
     }
     if (any) fluid_.removeMarked(removeFlags_);
 
-    secondsSinceSave_ = savedNow > 0 ? 0.0 : secondsSinceSave_ + config_.stepSeconds;
-
-    // Stall detection (simulated time, so it is deterministic too).
-    if (savedNow > 0 || !everEdited_ || fluid_.size() == 0) {
-        quietSeconds_ = 0.0;
-    } else {
-        double meanSpeed = 0.0;
-        for (const Vec2 v : fluid_.velocities()) meanSpeed += length(v);
-        meanSpeed /= static_cast<double>(fluid_.size());
-        quietSeconds_ = meanSpeed < kStillMeanSpeed ? quietSeconds_ + config_.stepSeconds : 0.0;
-    }
+    (void)savedNow;
+    // Settled: nothing counted (drain or pit) and no edits for a while, and
+    // the remaining water is nearly still. Simulated time, so deterministic.
+    secondsSinceActivity_ = any ? 0.0 : secondsSinceActivity_ + config_.stepSeconds;
+    double meanSpeed = 0.0;
+    for (const Vec2 v : fluid_.velocities()) meanSpeed += length(v);
+    if (fluid_.size() > 0) meanSpeed /= static_cast<double>(fluid_.size());
+    settled_ = fluid_.size() == 0 || (secondsSinceActivity_ >= kSettleSeconds && meanSpeed < kStillMeanSpeed);
 }
 
 void World::updateStatus() {
-    if (status_ == LevelStatus::Playing) {
-        const int alive = static_cast<int>(fluid_.size());
-        if (score_.saved >= score_.required) status_ = LevelStatus::Won;
-        else if (score_.saved + alive < score_.required) status_ = LevelStatus::Lost;
+    if (finished()) return;
+    if (settled_) {
+        if (goalReached()) finalize(LevelStatus::Won);
+        else if (goalImpossible()) finalize(LevelStatus::Lost);
     }
-    stalled_ = status_ == LevelStatus::Playing && quietSeconds_ >= kStallSeconds;
+    // Settled but undecided, after the player has done something: offer a restart.
+    stalled_ = !finished() && settled_ && everEdited_ && !goalReached();
 }
 
 } // namespace spillway

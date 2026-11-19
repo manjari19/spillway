@@ -1,0 +1,8 @@
+# Level 2 - Mind the Gap: the no-ink route.
+# Dig down from the basin's bottom-right corner, tunnel under the pit with a
+# dirt floor left between them, and keep falling until the tunnel opens into
+# the trough beside the drain.
+expect won 3
+at 30 dig 0.25  4.30 3.30  4.75 4.90
+at 30 dig 0.25  4.75 4.90  7.60 5.20
+at 30 dig 0.25  7.60 5.20  9.40 5.60

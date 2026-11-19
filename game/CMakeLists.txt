@@ -8,6 +8,10 @@ add_executable(spillway
   src/widgets.cpp
   src/menu_scene.cpp
   src/gameplay_scene.cpp
+  src/level_select_scene.cpp
+  src/settings_scene.cpp
+  src/input.cpp
+  src/save.cpp
 )
 target_link_libraries(spillway PRIVATE spillway_engine raylib spillway_warnings)
 target_compile_definitions(spillway PRIVATE SPILLWAY_SOURCE_GAME_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

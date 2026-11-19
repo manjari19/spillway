@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "effects.h"
 #include "scene.h"
 #include "spillway/world.h"
 #include "terrain_view.h"
@@ -12,8 +11,10 @@
 
 class App;
 
-// Title screen: a live fluid basin fills the screen behind a left-aligned
-// menu. The mouse stirs the water; gravity tilts slowly so it never rests.
+// Title screen: a living spillway fills the right of the screen behind a
+// left-aligned menu. A stream pours from the cliff into a basin, over a dam
+// and into a drain; drained water is recycled to the outlet, so it runs
+// forever. The mouse can stir the water.
 class MenuScene : public Scene {
 public:
     explicit MenuScene(App& app);
@@ -27,8 +28,14 @@ private:
         std::string label;
         bool enabled;
     };
+    struct Mote {
+        spillway::Vec2 p;
+        float phase, speed, size;
+    };
     void activate(int index);
     float itemY(int index) const;
+    float itemHeight(int index) const;
+    void emit();
     void drawTitle(float alpha) const;
 
     App& app_;
@@ -36,12 +43,14 @@ private:
     TerrainView terrainView_;
     View view_;
     float time_ = 0.0f;
+    size_t targetParticles_ = 0;
+    std::vector<Mote> motes_;
 
     std::vector<Item> items_;
+    std::string continueLine_;
     int focus_ = 0;
-    float barY_ = -1.0f;     // eased highlight bar position
-    float barAlpha_ = 0.0f;
-    float intro_ = 0.0f;     // 0 -> 1 entrance animation
+    float barY_ = -1.0f;
+    float intro_ = 0.0f;
     Vector2 lastMouse_{};
-    float stir_ = 0.0f;      // seconds of stirring left
+    float stir_ = 0.0f;
 };

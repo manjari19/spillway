@@ -2,6 +2,13 @@
 
 // A running level: terrain + fluid + drains/pits + player edits + scoring.
 //
+// Ending a level: reaching the goal does NOT end it. The water keeps flowing
+// until it has settled (nothing reached a drain or pit for kSettleSeconds
+// and what is left is nearly still), or the player calls finish(). At that
+// moment the result is computed once into an Outcome and the simulation
+// freezes, so the score shown can never change afterwards. A loss is also
+// only declared once the water has settled.
+//
 // Determinism: player edits are queued and only applied at the start of the
 // next fixed step, in the order they were queued. The same level plus the
 // same edits on the same step numbers therefore always produces the same
@@ -32,10 +39,23 @@ enum class LevelStatus { Playing, Won, Lost };
 
 struct Score {
     int total = 0;    // particles at level start
-    int saved = 0;    // reached a drain
+    int saved = 0;    // reached any drain
     int lost = 0;     // fell in a pit
     int required = 0; // saved needed to win
+    // Per drain: particles saved there and the share it needs (levels where
+    // several drains each need part of the water).
+    std::vector<int> drainSaved;
+    std::vector<int> drainRequired;
     float savedFraction() const { return total > 0 ? static_cast<float>(saved) / static_cast<float>(total) : 0.0f; }
+};
+
+// The frozen result of a finished level.
+struct Outcome {
+    LevelStatus status = LevelStatus::Playing;
+    Score score;
+    int percent = 0; // floor of the saved percentage
+    int stars = 0;
+    int inkUsed = 0;
 };
 
 // Things that happened during the last update, for visual effects. The game
@@ -57,7 +77,8 @@ constexpr float kInkReferenceWallWidth = 0.2f;
 
 class World {
 public:
-    explicit World(const LevelDesc& level, const SimulationConfig& config = {});
+    // particleScale: water quality multiplier (1 = normal, used by all tests).
+    explicit World(const LevelDesc& level, const SimulationConfig& config = {}, float particleScale = 1.0f);
     World(const World&) = delete;
     World& operator=(const World&) = delete;
 
@@ -74,14 +95,22 @@ public:
     const FluidSystem& fluid() const { return fluid_; }
 
     const Score& score() const { return score_; }
-    LevelStatus status() const { return status_; }
-    // True when the player has acted, the water has gone still and nothing
-    // has reached the drain for a few seconds: time to offer a restart.
+    LevelStatus status() const { return outcome_.status; }
+    // Enough water saved (in total and in every drain). The level keeps
+    // running; the game shows a Finish button.
+    bool goalReached() const;
+    // No longer possible to reach the goal with the water that is left.
+    bool goalImpossible() const;
+    // The water has settled after the player acted but the level is not
+    // decided: time to offer a restart.
     bool stalled() const { return stalled_; }
-    // Lost, or won and the flow has died down (no water reached a drain for
-    // kSettleSeconds), so the final percentage is stable enough to score.
-    bool finished() const;
-    int stars() const { return starRating(level_, score_, inkUsed(), inkBudget_); }
+    // The level is over and frozen; outcome() holds the final result.
+    bool finished() const { return outcome_.status != LevelStatus::Playing; }
+    const Outcome& outcome() const { return outcome_; }
+    // End now (the Finish button). Only allowed once the goal is reached.
+    // Returns true if the level finished.
+    bool finish();
+    int stars() const { return outcome_.stars; }
 
     WorldEvents& events() { return events_; }
 
@@ -95,7 +124,6 @@ public:
     int lastSdfNodes() const { return lastSdfNodes_; }
     const SimulationConfig& config() const { return config_; }
 
-    static constexpr double kStallSeconds = 3.0;
     static constexpr float kStillMeanSpeed = 0.2f; // m/s
     static constexpr double kSettleSeconds = 2.5;
 
@@ -104,6 +132,7 @@ private:
     void buildOccupancy();
     void collectDrainsAndPits();
     void updateStatus();
+    void finalize(LevelStatus status);
 
     template <class Fn>
     static void stampAlong(const Edit& e, Fn&& stamp);
@@ -119,14 +148,14 @@ private:
     std::vector<uint8_t> removeFlags_;
 
     Score score_;
-    LevelStatus status_ = LevelStatus::Playing;
+    Outcome outcome_;
     int inkBudget_ = 0;
     int ink_ = 0;
 
     bool everEdited_ = false;
     bool stalled_ = false;
-    double quietSeconds_ = 0.0;
-    double secondsSinceSave_ = 0.0;
+    double secondsSinceActivity_ = 0.0; // since water was last counted or the player edited
+    bool settled_ = false;
     WorldEvents events_;
 
     uint64_t stepCount_ = 0;

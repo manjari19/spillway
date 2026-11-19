@@ -170,9 +170,19 @@ LevelLoadResult parseLevel(std::string_view text, bool requireGoals) {
             op.material = cmd == "empty" ? Cell::Empty : cmd == "dirt" ? Cell::Dirt : Cell::Rock;
             if (!p.shape(words, 1, op.shape, cmd)) break;
             level.terrain.push_back(std::move(op));
+        } else if (cmd == "drain" && words.size() == 8 && words[6] == "need") {
+            // drain rect x0 y0 x1 y1 need P
+            std::vector<std::string> rectWords(words.begin(), words.begin() + 6);
+            Rect r;
+            if (!p.rect(rectWords, 1, r, cmd)) break;
+            float need = 0.0f;
+            if (!parseFloat(words[7], need) || need <= 0.0f || need > 100.0f) { p.fail("drain need must be a percentage in (0, 100]"); break; }
+            level.drains.push_back(r);
+            level.drainNeeds.push_back(need);
         } else if (cmd == "water" || cmd == "drain" || cmd == "pit") {
             Rect r;
             if (!p.rect(words, 1, r, cmd)) break;
+            if (cmd == "drain") level.drainNeeds.push_back(0.0f);
             if (haveSize && !rectInside(r, level.size)) { p.fail(cmd + " rect lies outside the level"); break; }
             (cmd == "water" ? level.water : cmd == "drain" ? level.drains : level.pits).push_back(r);
         } else if (cmd == "wall") {

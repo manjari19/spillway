@@ -1,0 +1,31 @@
+# Level 4 - Bedrock
+# Teaches walls. Everything here is rock except the basin's dirt rim. Water
+# that leaves the basin lands on a rock ramp that tips it left into the pit.
+# Rock can't be dug, so draw a wall that carries the water over the ramp.
+
+name  Bedrock
+hint  Rock can't be dug. Draw a wall (2) to carry the water over.
+size  16 9
+win   70
+ink   10
+stars 80 90
+
+rock  rect 0 0 16 9
+empty rect 0.3 0.7 15.7 8.7
+
+# The basin sits on a rock shelf; only its rim is dirt.
+rock  poly 0.3 2.4  4.6 3.1  4.6 3.6  0.3 3.6
+dirt  rect 4.0 0.7 4.6 3.1
+
+# A rock ramp tilted down to the left, ending above the pit.
+rock  poly 2.4 6.5  7.6 4.5  7.6 5.1  2.4 7.1
+
+# Floor on the right, sloping down to the drain.
+rock  poly 8.2 9  8.2 6.6  15.7 7.9  15.7 9
+
+rock  circle 11.0 3.0 0.6
+rock  circle 13.6 5.0 0.45
+
+water rect 0.35 0.9 3.95 2.4
+pit   rect 0.3 8.1 8.2 8.7
+drain rect 12.6 6.9 15.7 7.9

@@ -1,0 +1,11 @@
+# Level 5 - Long Way Down
+# Open the rim (down to the shelf, following its slope so no pocket is left
+# to trap water); clear the plug with a stroke along the shelf surface; bridge
+# the pit gap with one short wall laid flush with the rock shelf's slope; dig
+# down to the drain.
+expect won 3
+at 30 dig 0.30  3.70 0.90  3.70 2.20
+at 30 dig 0.28  3.30 2.30  4.20 2.45
+at 30 dig 0.28  6.10 2.80  7.70 3.08
+at 30 wall 0.10  9.15 5.34  7.35 5.64
+at 30 dig 0.35  11.6 7.75  11.9 8.30

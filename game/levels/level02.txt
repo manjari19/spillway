@@ -1,0 +1,37 @@
+# Level 2 - Mind the Gap
+# Teaches pits. Right past the basin's rim a glowing pit waits: water that
+# falls in is lost. Two ways across:
+#   - bridge it with a wall (costs more than half the ink: 2 stars at most),
+#   - or dig a tunnel underneath it, keeping a floor of dirt between the
+#     tunnel and the pit (no ink: 3 stars possible).
+
+name  Mind the Gap
+hint  Water in the red pit is lost. Bridge it, or tunnel underneath.
+size  16 9
+win   65
+ink   4
+stars 78 88
+
+dirt  rect 0 0 16 9
+empty rect 0 0 16 0.7
+
+# Basin on the left; its floor tilts toward the rim so it drains fully.
+empty poly 0.3 0.7  4.4 0.7  4.4 3.5  0.3 3.0
+# The pit shaft right behind the rim, open to the sky.
+empty rect 5.2 0.7 7.2 4.6
+pit   rect 5.2 4.0 7.2 4.6
+
+# A short ledge beyond the pit (just below the basin floor), then the
+# ground falls away into a wide open trough with the drain on its floor.
+empty poly 7.2 0.7  16 0.7  16 6.0  9.8 6.0  8.1 3.9  7.2 3.75
+empty rect 12.2 5.0 15.7 6.0
+
+rock  circle 12.5 7.4 0.8
+rock  circle 2.6 6.6 0.6
+
+rock  rect 0 0 0.3 9
+rock  rect 15.7 0 16 9
+rock  rect 0 8.7 16 9
+
+water rect 0.35 1.0 4.35 2.95
+drain rect 10.4 5.5 15.7 6.0

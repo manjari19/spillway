@@ -1,0 +1,35 @@
+# Level 3 - Fork
+# Teaches splitting flow. Two buried drains, and each one needs its own share
+# of the water. The basin floor tilts left, so water favours the left side:
+# the right channel has to start lower to get its share.
+
+name  Fork
+hint  Each drain needs its own share. Split the flow between them.
+size  16 9
+win   80
+ink   3
+stars 86 93
+
+dirt  rect 0 0 16 9
+empty rect 0 0 16 0.7
+
+# Basin in the middle; its floor tilts down to the left.
+empty poly 5.4 0.7  10.6 0.7  10.6 2.7  5.4 3.5
+
+# An unbreakable wedge right under the basin.
+rock  poly 7.3 3.7  8.7 3.7  8.0 5.4
+
+# Buried drain chambers in the bottom corners.
+empty rect 0.3 6.8 3.2 8.7
+empty rect 12.8 6.8 15.7 8.7
+
+rock  circle 4.6 7.6 0.55
+rock  circle 11.2 7.4 0.65
+
+rock  rect 0 0 0.3 9
+rock  rect 15.7 0 16 9
+rock  rect 0 8.7 16 9
+
+water rect 5.45 1.0 10.55 2.65
+drain rect 0.3 8.1 3.2 8.7 need 35
+drain rect 12.8 8.1 15.7 8.7 need 35

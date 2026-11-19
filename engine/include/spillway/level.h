@@ -20,7 +20,8 @@
 //   empty  poly   x y x y x y ...    only.) Shapes: rect, circle, poly.
 //
 //   water  rect x0 y0 x1 y1          fill with fluid at rest density
-//   drain  rect x0 y0 x1 y1          particles here are saved
+//   drain  rect x0 y0 x1 y1 [need P] particles here are saved; with `need`,
+//                                    this drain alone must get P% of the water
 //   pit    rect x0 y0 x1 y1          particles here are lost
 //
 // Coordinates are metres, origin top-left, +y down. Shapes describe areas
@@ -68,6 +69,7 @@ struct LevelDesc {
     std::vector<TerrainOp> terrain;
     std::vector<Rect> water;
     std::vector<Rect> drains;
+    std::vector<float> drainNeeds; // percent per drain (0 = no own requirement)
     std::vector<Rect> pits;
 };
 
