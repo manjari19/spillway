@@ -1,0 +1,45 @@
+# Level 6 - Twin Springs
+# Two separate sources and one drain. Neither spring alone holds enough water
+# to win, so both have to be brought to the same drain.
+#   - the left spring is a high pool behind a dirt rim;
+#   - the right spring is an underground cave. A buried pit chamber lies
+#     right under the direct line from the cave to the drain, and a rock cap
+#     closes the drain's right side, so the cave's water has to travel left,
+#     over the pit, and join the left spring's channel.
+
+name  Twin Springs
+hint  Two springs, one drain. Neither is enough alone.
+size  16 9
+win   75
+ink   3
+stars 86 93
+
+dirt  rect 0 0 16 9
+empty rect 0 0 16 0.7
+
+# Left spring: a high pool, floor tilted down toward its right-hand rim.
+empty poly 0.3 0.7  3.9 0.7  3.9 2.5  0.3 2.0
+
+# Right spring: a buried cave, floor tilted down to the left.
+empty poly 11.6 3.4  15.7 3.0  15.7 4.4  11.6 4.9
+
+# A buried pit chamber between the cave and the drain.
+empty rect 9.9 5.45 11.7 6.7
+pit   rect 9.9 6.1 11.7 6.7
+
+# The drain chamber, buried in the middle. A rock cap covers it and its
+# right side, so the only way in is from the left.
+empty rect 6.6 7.4 9.4 8.7
+rock  poly 7.0 7.4  7.3 6.9  10.4 6.9  10.4 8.7  9.4 8.7  9.4 7.4
+
+rock  circle 4.6 5.2 0.6
+rock  circle 10.6 2.2 0.5
+rock  circle 2.0 7.6 0.55
+
+rock  rect 0 0 0.3 9
+rock  rect 15.7 0 16 9
+rock  rect 0 8.7 16 9
+
+water rect 0.35 0.75 3.85 1.95
+water rect 11.65 3.5 15.65 4.35
+drain rect 6.6 8.1 9.4 8.7

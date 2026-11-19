@@ -28,7 +28,7 @@ std::vector<fs::path> shippedLevels() {
 
 TEST_CASE("Every level file in game/levels loads", "[levels]") {
     const auto levels = shippedLevels();
-    REQUIRE(levels.size() == 5);
+    REQUIRE(levels.size() == 10);
     for (const auto& p : levels) {
         INFO(p.string());
         const auto r = loadLevelFile(p.string());
@@ -59,5 +59,35 @@ TEST_CASE("Every shipped level is beaten by its recorded solution", "[levels][so
         INFO("percent " << o.percent << ", stars " << o.stars);
         CHECK((o.status == LevelStatus::Won) == s.expectWin);
         CHECK(o.stars == s.expectStars);
+    }
+}
+
+TEST_CASE("No shipped level leaks water when left untouched", "[levels]") {
+    // With no player edits, every pool must hold its water: nothing may reach
+    // a drain or a pit, the pools must come to rest, and no particle may end
+    // up far from where it started. Pools on tilted floors slosh into their
+    // low corner (up to ~1.3 m in the shipped levels); a gap in a rim or a
+    // floor would carry water several metres away. Nothing is removed, so a
+    // particle keeps its index and can be compared with its start position.
+    constexpr float kMaxDisplacement = 2.0f; // metres
+    for (const auto& p : shippedLevels()) {
+        INFO(p.filename().string());
+        const auto level = loadLevelFile(p.string());
+        REQUIRE(level);
+        World w(*level.level);
+        const std::vector<Vec2> start(w.fluid().positions().begin(), w.fluid().positions().end());
+        for (int s = 0; s < 60 * 20; ++s) w.step();
+        CHECK(w.score().saved == 0);
+        CHECK(w.score().lost == 0);
+        REQUIRE(w.fluid().size() == start.size());
+        float maxMove = 0.0f, meanSpeed = 0.0f;
+        for (size_t i = 0; i < start.size(); ++i) {
+            maxMove = std::max(maxMove, length(w.fluid().positions()[i] - start[i]));
+            meanSpeed += length(w.fluid().velocities()[i]);
+        }
+        meanSpeed /= static_cast<float>(start.size());
+        INFO("max displacement " << maxMove << " m, mean speed " << meanSpeed << " m/s");
+        CHECK(maxMove < kMaxDisplacement);
+        CHECK(meanSpeed < World::kStillMeanSpeed);
     }
 }

@@ -1,0 +1,9 @@
+# Level 9 - Rationed
+# Close the two narrow necks (fork 1's wrong turn and fork 2's middle branch)
+# so all the water takes the high road on the right: 0.9 m of the 2.4 m of
+# ink. Walling off the two wide pit branches instead also wins, but uses
+# 2.1 m (2 stars at most). Walls go in before the plug is opened.
+expect won 3
+at 30 wall 0.10  5.80 3.00  6.50 3.46
+at 30 wall 0.10  9.44 3.66  10.20 3.94
+at 30 dig 0.30  3.90 1.90  4.90 2.20

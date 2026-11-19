@@ -10,6 +10,7 @@ add_executable(spillway_tests
   test_marching_squares.cpp
   test_progress.cpp
   test_levels.cpp
+  test_threads.cpp
 )
 target_compile_definitions(spillway_tests PRIVATE
   SPILLWAY_LEVEL_DIR="${PROJECT_SOURCE_DIR}/game/levels"

@@ -34,6 +34,7 @@ private:
     };
     void activate(int index);
     float itemY(int index) const;
+    float titleY() const;
     float itemHeight(int index) const;
     void emit();
     void drawTitle(float alpha) const;

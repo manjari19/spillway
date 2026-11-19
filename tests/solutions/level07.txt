@@ -1,0 +1,8 @@
+# Level 7 - Switchback
+# Shave each plug off just above the surface with a slightly small brush, so
+# the pit chambers 0.42 m down are never opened, then dig into the drain.
+expect won 3
+at 30 dig 0.30  4.20 2.64  5.50 2.90
+at 30 dig 0.30  7.40 3.30  9.20 3.66
+at 30 dig 0.30  9.40 6.23  7.60 6.55
+at 30 dig 0.35  2.40 7.40  1.80 8.15

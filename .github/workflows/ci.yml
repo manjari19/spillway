@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install raylib's system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+
+      # raylib and Catch2 are fetched by CMake into build/_deps. Cache the
+      # downloaded sources so most runs skip the download.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps/raylib-src
+            build/_deps/catch2-src
+            build/_deps/raylib-subbuild
+            build/_deps/catch2-subbuild
+          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (engine, game, tests, benchmark)
+        run: cmake --build build -j 4
+
+      - name: Test (includes every level's recorded solution and the threading determinism tests)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Small benchmark
+        run: ./build/bench/spillway_bench --quick --out bench-ci
+
+      - name: Upload benchmark output
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.os }}
+          path: bench-ci

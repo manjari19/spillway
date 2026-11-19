@@ -9,14 +9,16 @@ add_executable(spillway
   src/menu_scene.cpp
   src/gameplay_scene.cpp
   src/level_select_scene.cpp
+  src/level_art.cpp
   src/settings_scene.cpp
   src/input.cpp
   src/save.cpp
+  src/platform.cpp
 )
 target_link_libraries(spillway PRIVATE spillway_engine raylib spillway_warnings)
 target_compile_definitions(spillway PRIVATE SPILLWAY_SOURCE_GAME_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(APPLE)
-  target_link_libraries(spillway PRIVATE "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
+  target_link_libraries(spillway PRIVATE "-framework IOKit" "-framework Cocoa" "-framework OpenGL" "-framework CoreGraphics")
 endif()
 
 # Ship levels, shaders and fonts next to the executable. This is a separate

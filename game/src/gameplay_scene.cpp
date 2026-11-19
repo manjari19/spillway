@@ -9,9 +9,11 @@
 #include "app.h"
 #include "assets.h"
 #include "input.h"
+#include "level_art.h"
 #include "ease.h"
 #include "renderer.h"
 #include "theme.h"
+#include "spillway/thread_pool.h"
 #include "widgets.h"
 
 using namespace spillway;
@@ -40,6 +42,7 @@ GameplayScene::GameplayScene(App& app, int levelIndex, LevelDesc level)
     : app_(app), levelIndex_(levelIndex), level_(std::move(level)) {
     particleScale_ = app.settings().particleScale();
     world_ = std::make_unique<World>(level_, SimulationConfig{}, particleScale_);
+    world_->fluid().setThreadPool(&app_.simPool());
     terrainView_.reset(world_->terrain());
     layout();
 }
@@ -66,7 +69,8 @@ void GameplayScene::enterResult() {
 void GameplayScene::layout() {
     const float s = ui::scale();
     const float m = 14.0f * s;
-    hudBar_ = {m, m, static_cast<float>(GetScreenWidth()) - 2 * m, 60.0f * s};
+    // Below the camera notch in fullscreen (the level view follows the HUD).
+    hudBar_ = {m, ui::safeTop() + m, static_cast<float>(GetScreenWidth()) - 2 * m, 60.0f * s};
     const float top = hudBar_.y + hudBar_.height + 12.0f * s;
     const Rectangle area{16.0f * s, top, static_cast<float>(GetScreenWidth()) - 32.0f * s,
                          static_cast<float>(GetScreenHeight()) - top - 16.0f * s};
@@ -173,6 +177,12 @@ void GameplayScene::update(float dt) {
         auto& f = world_->fluid();
         f.setNeighbourSearch(f.neighbourSearch() == NeighbourSearch::Grid ? NeighbourSearch::BruteForce : NeighbourSearch::Grid);
     }
+    if (input::pressed(KEY_T)) {
+        // Threads on/off. Results are bit-identical either way (see
+        // thread_pool.h); only the step time changes.
+        auto& f = world_->fluid();
+        f.setThreadPool(f.threadPool() ? nullptr : &app_.simPool());
+    }
     if (input::pressed(KEY_R)) restart();
 
     if (mode_ == Mode::Playing) {
@@ -202,7 +212,15 @@ void GameplayScene::update(float dt) {
     }
     if (mode_ != Mode::Paused && !world_->finished()) {
         world_->fluid().setInteraction(mode_ == Mode::Playing ? interaction_ : Interaction{});
+        world_->fluid().resetTimings();
         world_->update(dt);
+        // Phase times per fixed step (4 substeps), smoothed for display.
+        const StepTimings& t = world_->fluid().timings();
+        if (t.steps > 0) {
+            const double perStep = static_cast<double>(SimulationConfig{}.substeps) / static_cast<double>(t.steps);
+            const double now[4] = {t.grid * perStep, t.density * perStep, t.forces * perStep, t.integrate * perStep};
+            for (int k = 0; k < 4; ++k) phaseMs_[k] += (now[k] - phaseMs_[k]) * 0.1;
+        }
         int nodes = world_->lastSdfNodes();
         if (nodes > 0) lastSdfNodes_ = nodes;
         spawnEffects();
@@ -229,40 +247,7 @@ void GameplayScene::prepare() {
 
 // ---------------------------------------------------------------- world ---
 
-void GameplayScene::drawDrainsAndPits() {
-    const float pulse = 0.5f + 0.5f * std::sin(time_ * 2.4f);
-    for (const Rect& d : world_->level().drains) {
-        const Vector2 a = view_.toScreen(d.min), b = view_.toScreen(d.max);
-        const Rectangle r{a.x, a.y, b.x - a.x, b.y - a.y};
-        // Light rising out of the grate, fading upward (hidden under dirt
-        // until the player digs down to it).
-        const float glowH = r.height * 2.2f;
-        DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y - glowH), static_cast<int>(r.width),
-                               static_cast<int>(glowH), Color{62, 232, 255, 0},
-                               ease::alpha(theme::cyan, 0.16f + 0.08f * pulse));
-        // The portal itself: a bright body with grate bars.
-        DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width),
-                               static_cast<int>(r.height), ease::alpha(theme::cyan, 0.55f + 0.2f * pulse),
-                               ease::alpha(theme::violet, 0.35f));
-        const int bars = std::max(3, static_cast<int>(r.width / (14.0f * ui::scale())));
-        for (int i = 1; i < bars; ++i) {
-            const float x = r.x + r.width * static_cast<float>(i) / static_cast<float>(bars);
-            DrawLineEx({x, r.y + 3}, {x, r.y + r.height}, 2.0f * ui::scale(), Color{10, 8, 30, 150});
-        }
-        DrawRectangleRec({r.x, r.y, r.width, 2.5f * ui::scale()}, ease::alpha(theme::wall, 0.75f + 0.25f * pulse));
-    }
-    for (const Rect& p : world_->level().pits) {
-        const Vector2 a = view_.toScreen(p.min), b = view_.toScreen(p.max);
-        const Rectangle r{a.x, a.y, b.x - a.x, b.y - a.y};
-        // Dark void with a faint red-violet glow at its lip.
-        DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width),
-                               static_cast<int>(r.height), ease::alpha(theme::danger, 0.28f + 0.08f * pulse),
-                               Color{3, 2, 8, 255});
-        const float glowH = r.height * 0.8f;
-        DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y - glowH), static_cast<int>(r.width),
-                               static_cast<int>(glowH), Color{217, 74, 154, 0}, ease::alpha(theme::danger, 0.12f));
-    }
-}
+void GameplayScene::drawDrainsAndPits() { ::drawDrainsAndPits(world_->level(), view_, time_, ui::scale()); }
 
 void GameplayScene::drawBrush() {
     const Vector2 m = input::mouse();
@@ -694,9 +679,14 @@ void GameplayScene::drawDebug() {
     const Row rows[] = {
         {"fps", fmt("%d", GetFPS())},
         {"physics step", fmt("%.2f ms", world_->lastStepMs())},
+        {"  grid build", fmt("%.2f ms", phaseMs_[0])},
+        {"  density", fmt("%.2f ms", phaseMs_[1])},
+        {"  forces", fmt("%.2f ms", phaseMs_[2])},
+        {"  integrate + collide", fmt("%.2f ms", phaseMs_[3])},
+        {"render (CPU)", fmt("%.2f ms", app_.lastRenderCpuMs())},
         {"particles", fmt("%zu", f.size())},
         {"neighbour search", f.neighbourSearch() == NeighbourSearch::Grid ? "grid" : "brute force"},
-        {"threads", "1"},
+        {"threads", fmt("%d", f.threadPool() ? f.threadPool()->threads() : 1)},
         {"sdf nodes / edit", fmt("%d", lastSdfNodes_)},
         {"mesh chunks / edit", fmt("%d", lastChunks_)},
         {"push/pull (P)", debugPush_ ? "on" : "off"},
@@ -710,7 +700,7 @@ void GameplayScene::drawDebug() {
         valueW = std::max(valueW, vm.x);
         rowH = std::max({rowH, lm.y, vm.y});
     }
-    const std::string keys = "`  hide    G  grid    B  search";
+    const std::string keys = "`  hide    G  grid    B  search    T  threads";
     const Vector2 km = measureText(FontRole::Regular, keys, ls);
     const float pad = 14.0f * s, lineGap = 4.0f * s, colGap = 24.0f * s;
     const int n = static_cast<int>(std::size(rows));

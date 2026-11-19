@@ -1,0 +1,71 @@
+# Level 10 - Spillway
+# The finale: everything at once.
+#   - Two sources: a big pool on the left (about 70% of the water) and a
+#     small spring in a rock cup on the right (about 30%).
+#   - Two drains, and each needs 35%. The spring alone is not enough for the
+#     right drain, so some of the pool must go right too.
+#   - The pool's natural way out runs over a rock spine to the right, so the
+#     left drain only gets water through a channel dug down the left hill,
+#     where pit pockets are scattered (weave between them).
+#   - On the right, an open pit shaft cuts the slope: bridge it with a wall,
+#     or tunnel under it.
+
+name  Spillway
+hint  Two sources, two drains, each needs its share. Use everything.
+size  16 9
+win   80
+ink   2
+stars 86 93
+
+rock  rect 0 0 16 9
+empty rect 0.3 0.7 15.7 8.7
+
+# The left hill, with the pool on top. Its surface runs down to the spine.
+dirt  poly 0.3 2.3  4.2 2.6  7.4 4.0  7.4 8.7  0.3 8.7
+# The pool's rim.
+dirt  poly 4.2 0.7  4.8 0.7  4.8 2.9  4.2 2.6
+
+# The rock spine between the halves; its top is the spillway crest, tipped
+# slightly to the right so it never holds a puddle.
+rock  poly 7.3 4.0  8.7 4.2  8.7 8.7  7.3 8.7
+
+# The right slope, falling to the right, down to the right drain.
+dirt  poly 8.7 4.2  15.7 5.6  15.7 8.7  8.7 8.7
+# An open pit shaft across the right slope.
+empty rect 10.6 3.0 11.5 6.2
+pit   rect 10.6 5.7 11.5 6.2
+
+# The spring: a rock cup high on the right, its outlet plugged with dirt.
+# Its floor tilts toward the outlet so it drains completely.
+rock  poly 13.3 2.3  15.7 1.9  15.7 2.75  13.3 2.75
+rock  rect 13.3 0.7 13.6 1.2
+dirt  rect 13.3 1.2 13.8 2.3
+
+# Pit pockets scattered through the left hill.
+empty rect 0.3 5.3 1.1 5.65
+pit   rect 0.3 5.3 1.1 5.65
+empty rect 2.0 4.2 2.8 4.55
+pit   rect 2.0 4.2 2.8 4.55
+empty rect 4.2 4.0 5.0 4.35
+pit   rect 4.2 4.0 5.0 4.35
+empty rect 3.0 5.7 3.8 6.05
+pit   rect 3.0 5.7 3.8 6.05
+empty rect 5.3 5.9 6.1 6.25
+pit   rect 5.3 5.9 6.1 6.25
+empty rect 1.4 7.0 2.2 7.35
+pit   rect 1.4 7.0 2.2 7.35
+empty rect 4.3 7.3 5.1 7.65
+pit   rect 4.3 7.3 5.1 7.65
+
+# Buried drains.
+empty rect 0.3 8.1 2.9 8.7
+empty rect 13.0 7.9 15.7 8.7
+
+rock  circle 6.2 2.0 0.4
+rock  circle 9.6 7.4 0.55
+rock  circle 13.8 6.4 0.4
+
+water rect 0.35 0.75 4.15 2.25
+water rect 13.85 0.75 15.65 2.25
+drain rect 0.3 8.2 2.9 8.7 need 35
+drain rect 13.0 8.2 15.7 8.7 need 35

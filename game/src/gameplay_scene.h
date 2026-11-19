@@ -91,4 +91,5 @@ private:
     spillway::Interaction interaction_{};
     int lastSdfNodes_ = 0;
     int lastChunks_ = 0;
+    double phaseMs_[4] = {0, 0, 0, 0}; // grid, density, forces, integrate (smoothed, per fixed step)
 };

@@ -60,6 +60,12 @@ MenuScene::MenuScene(App& app) : app_(app) {
     lastMouse_ = input::mouse();
 }
 
+float MenuScene::titleY() const {
+    // A fifth of the way down the part of the screen below any notch.
+    const float top = ui::safeTop();
+    return top + (static_cast<float>(GetScreenHeight()) - top) * 0.2f;
+}
+
 float MenuScene::itemHeight(int index) const {
     const float s = ui::scale();
     // Play gets a second line when there is progress to continue.
@@ -69,7 +75,7 @@ float MenuScene::itemHeight(int index) const {
 float MenuScene::itemY(int index) const {
     const float s = ui::scale();
     const float titleH = measureText(FontRole::SemiBold, kTitle, theme::type::display * s, kTitleTracking).y;
-    float y = static_cast<float>(GetScreenHeight()) * 0.2f + titleH + 86.0f * s;
+    float y = titleY() + titleH + 86.0f * s;
     for (int i = 0; i < index; ++i) y += itemHeight(i);
     return y;
 }
@@ -156,7 +162,7 @@ void MenuScene::prepare() {
 void MenuScene::drawTitle(float alpha) const {
     const float s = ui::scale();
     const float x = 0.075f * static_cast<float>(GetScreenWidth());
-    const float y = static_cast<float>(GetScreenHeight()) * 0.2f;
+    const float y = titleY();
     drawText(FontRole::SemiBold, kTitle, {x, y}, theme::type::display * s, ease::alpha(theme::text, alpha), kTitleTracking);
 }
 

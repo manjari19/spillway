@@ -17,6 +17,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(SPILLWAY_BUILD_GAME  "Build the raylib game"  ON)
 option(SPILLWAY_BUILD_TESTS "Build the Catch2 tests" ON)
+option(SPILLWAY_BUILD_BENCH "Build the headless benchmark" ON)
 
 # Warnings for our own targets only (not for fetched dependencies).
 add_library(spillway_warnings INTERFACE)
@@ -29,6 +30,10 @@ endif()
 include(FetchContent)
 
 add_subdirectory(engine)
+
+if(SPILLWAY_BUILD_BENCH)
+  add_subdirectory(bench)
+endif()
 
 if(SPILLWAY_BUILD_GAME)
   set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

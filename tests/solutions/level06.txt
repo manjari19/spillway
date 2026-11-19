@@ -1,0 +1,12 @@
+# Level 6 - Twin Springs
+# Left spring: open the rim along the pool's floor and dig down to the left
+# side of the drain chamber (the only way in, past the rock cap). Right
+# spring: leave the cave through its low left corner and run a channel left,
+# above the buried pit, until it joins the first channel.
+expect won 3
+at 30 dig 0.28  3.70 2.30  4.60 2.70
+at 30 dig 0.28  4.60 2.70  5.80 4.40
+at 30 dig 0.28  5.80 4.40  6.20 7.60
+at 30 dig 0.28  6.20 7.60  6.90 8.30
+at 30 dig 0.28  11.70 4.80  9.00 5.20
+at 30 dig 0.28  9.00 5.20  5.90 5.60

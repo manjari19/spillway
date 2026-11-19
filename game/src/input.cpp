@@ -29,7 +29,10 @@ struct State {
     double dragStart = 0, dragDur = 0;
     Vector2 dragFrom{}, dragTo{};
     std::vector<std::string> shots;
+    std::vector<Vector2> probes;
+    int osToggles = 0;
     bool quit = false;
+    std::set<int> consumed; // keys already handled this frame (real or scripted)
 } g;
 
 int keyCode(const std::string& name) {
@@ -37,7 +40,8 @@ int keyCode(const std::string& name) {
         {"ENTER", KEY_ENTER}, {"ESCAPE", KEY_ESCAPE}, {"UP", KEY_UP}, {"DOWN", KEY_DOWN}, {"LEFT", KEY_LEFT},
         {"RIGHT", KEY_RIGHT}, {"SPACE", KEY_SPACE}, {"R", KEY_R}, {"P", KEY_P}, {"G", KEY_G}, {"B", KEY_B},
         {"ONE", KEY_ONE}, {"TWO", KEY_TWO}, {"THREE", KEY_THREE}, {"GRAVE", KEY_GRAVE},
-        {"LBRACKET", KEY_LEFT_BRACKET}, {"RBRACKET", KEY_RIGHT_BRACKET}};
+        {"LBRACKET", KEY_LEFT_BRACKET}, {"RBRACKET", KEY_RIGHT_BRACKET}, {"F", KEY_F},
+        {"ALT", KEY_LEFT_ALT}, {"CMD", KEY_LEFT_SUPER}, {"CTRL", KEY_LEFT_CONTROL}};
     auto it = keys.find(name);
     return it == keys.end() ? KEY_NULL : it->second;
 }
@@ -61,6 +65,7 @@ void loadScript(const std::string& spec) {
 bool scripted() { return g.active; }
 
 void beginFrame(double now) {
+    g.consumed.clear();
     if (!g.active) return;
     g.pressedKeys.clear();
     g.click = false;
@@ -74,7 +79,14 @@ void beginFrame(double now) {
         const Event& e = g.events[g.next++];
         float v[5] = {0, 0, 0, 0, 0};
         std::sscanf(e.args.c_str(), "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);
-        if (e.action == "key") g.pressedKeys.insert(keyCode(e.args));
+        if (e.action == "key") {
+            // "ALT+ENTER": every key of a chord is down (and pressed) this frame.
+            std::stringstream chord(e.args);
+            std::string k;
+            while (std::getline(chord, k, '+')) g.pressedKeys.insert(keyCode(k));
+        }
+        else if (e.action == "probe") g.probes.push_back({v[0], v[1]});
+        else if (e.action == "ostoggle") ++g.osToggles;
         else if (e.action == "move") g.pos = {v[0], v[1]};
         else if (e.action == "click") { g.pos = {v[0], v[1]}; g.click = true; }
         else if (e.action == "drag") {
@@ -91,7 +103,11 @@ void beginFrame(double now) {
     }
 }
 
-bool pressed(int key) { return g.active ? g.pressedKeys.count(key) > 0 : IsKeyPressed(key); }
+bool pressed(int key) {
+    if (g.consumed.count(key)) return false;
+    return g.active ? g.pressedKeys.count(key) > 0 : IsKeyPressed(key);
+}
+void consume(int key) { g.consumed.insert(key); }
 bool down(int key) { return g.active ? g.pressedKeys.count(key) > 0 : IsKeyDown(key); }
 bool mousePressed(int button) { return g.active ? (button == MOUSE_BUTTON_LEFT && g.click) : IsMouseButtonPressed(button); }
 bool mouseDown(int button) { return g.active ? (button == MOUSE_BUTTON_LEFT && (g.held || g.click)) : IsMouseButtonDown(button); }
@@ -103,6 +119,17 @@ bool takeShot(std::string& path) {
     if (g.shots.empty()) return false;
     path = g.shots.front();
     g.shots.erase(g.shots.begin());
+    return true;
+}
+bool takeProbe(Vector2& at) {
+    if (g.probes.empty()) return false;
+    at = g.probes.front();
+    g.probes.erase(g.probes.begin());
+    return true;
+}
+bool takeOsToggle() {
+    if (g.osToggles == 0) return false;
+    --g.osToggles;
     return true;
 }
 bool quitRequested() { return g.quit; }

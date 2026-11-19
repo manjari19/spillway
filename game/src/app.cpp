@@ -10,9 +10,13 @@
 #include "ease.h"
 #include "gameplay_scene.h"
 #include "input.h"
+#include "level_art.h"
 #include "level_select_scene.h"
 #include "menu_scene.h"
+#include "platform.h"
 #include "settings_scene.h"
+#include "spillway/world.h"
+#include "terrain_view.h"
 #include "theme.h"
 #include "widgets.h"
 
@@ -22,6 +26,7 @@ extern "C" {
 struct GLFWwindow;
 GLFWwindow* glfwGetCurrentContext(void);
 void glfwGetWindowSize(GLFWwindow* window, int* width, int* height);
+void glfwGetFramebufferSize(GLFWwindow* window, int* width, int* height);
 }
 
 namespace {
@@ -63,6 +68,40 @@ void App::loadLevels() {
     progress_.ensureSize(levelCount());
 }
 
+const Texture2D& App::levelThumbnail(int index) {
+    // 16:9 at 640x360: sharp at the tooltip's size on a 2x display.
+    constexpr int kW = 640, kH = 360;
+    if (thumbs_.size() < levels_.size()) thumbs_.resize(levels_.size());
+    RenderTexture2D& t = thumbs_[static_cast<size_t>(index)];
+    if (!t.id) {
+        t = LoadRenderTexture(kW, kH);
+        SetTextureFilter(t.texture, TEXTURE_FILTER_BILINEAR);
+        const spillway::LevelDesc& lv = level(index);
+        // The level as it starts, after a second of settling (the spawn
+        // lattice relaxes into a natural pool, as the player first sees it).
+        spillway::World world(lv);
+        for (int k = 0; k < 60; ++k) world.step();
+        TerrainView terrain;
+        terrain.reset(world.terrain());
+        const View view = View::fit(lv.size, {0, 0, static_cast<float>(kW), static_cast<float>(kH)});
+        renderer_.renderOffscreen(
+            t, [&] { terrain.prepare(renderer_, view); },
+            [&] {
+                drawDrainsAndPits(lv, view, 0.0f, 0.5f);
+                renderer_.drawWater(world.fluid().positions(), world.fluid().velocities(), view);
+                terrain.draw(renderer_, view, world.terrain());
+            });
+        // Developer hook: SPILLWAY_THUMB_DIR=/dir writes each thumbnail as a PNG.
+        if (const char* dir = std::getenv("SPILLWAY_THUMB_DIR")) {
+            Image img = LoadImageFromTexture(t.texture);
+            ImageFlipVertical(&img);
+            ExportImage(img, (std::string(dir) + "/thumb" + std::to_string(index + 1) + ".png").c_str());
+            UnloadImage(img);
+        }
+    }
+    return t.texture;
+}
+
 void App::openMenu() { goTo(std::make_unique<MenuScene>(*this)); }
 void App::openLevelSelect() { goTo(std::make_unique<LevelSelectScene>(*this)); }
 void App::openSettings() { goTo(std::make_unique<SettingsScene>(*this)); }
@@ -84,12 +123,52 @@ void App::resetProgress() {
 
 void App::applySettings() {
     renderer_.setBloom(settings_.bloom);
-    // Borderless fullscreen is the reliable kind on every desktop OS.
-    if (settings_.fullscreen != fullscreenApplied_) {
-        ToggleBorderlessWindowed();
-        fullscreenApplied_ = settings_.fullscreen;
-    }
+    // Fullscreen follows settings_.fullscreen in updateFullscreen().
     saveSettings(settings_);
+}
+
+void App::updateFullscreen(double now) {
+    // Alt+Enter toggles here. Ctrl+Cmd+F is the system's own shortcut on
+    // macOS (the window menu handles it and the change is adopted below);
+    // elsewhere the game handles it too.
+    const bool alt = input::down(KEY_LEFT_ALT) || input::down(KEY_RIGHT_ALT);
+    bool toggle = alt && input::pressed(KEY_ENTER);
+    if (toggle) input::consume(KEY_ENTER);
+#if !defined(__APPLE__)
+    const bool cmd = input::down(KEY_LEFT_SUPER) || input::down(KEY_RIGHT_SUPER);
+    const bool ctrl = input::down(KEY_LEFT_CONTROL) || input::down(KEY_RIGHT_CONTROL);
+    if (cmd && ctrl && input::pressed(KEY_F)) {
+        input::consume(KEY_F);
+        toggle = true;
+    }
+#endif
+    if (toggle) {
+        settings_.fullscreen = !settings_.fullscreen;
+        saveSettings(settings_);
+    }
+
+    // On macOS the switch is animated and asynchronous: give a request time
+    // to land before acting on the state again.
+    const bool actual = platform::isFullscreen();
+    const bool settled = now - fullscreenRequestAt_ > 1.5;
+    if (actual != fullscreenSeen_) {
+        fullscreenSeen_ = actual;
+        const platform::Insets in = platform::safeArea();
+        int fw = 0, fh = 0;
+        if (GLFWwindow* w = glfwGetCurrentContext()) glfwGetFramebufferSize(w, &fw, &fh);
+        std::fprintf(stderr, "Spillway: fullscreen %s: window %dx%d, framebuffer %dx%d, monitor %dx%d, safe top %.0f\n",
+                     actual ? "on" : "off", GetScreenWidth(), GetScreenHeight(), fw, fh,
+                     GetMonitorWidth(GetCurrentMonitor()), GetMonitorHeight(GetCurrentMonitor()), in.top);
+        // Changed by the system rather than by us: remember the new choice.
+        if (settled && actual != settings_.fullscreen) {
+            settings_.fullscreen = actual;
+            saveSettings(settings_);
+        }
+    }
+    if (actual != settings_.fullscreen && settled) {
+        platform::setFullscreen(settings_.fullscreen);
+        fullscreenRequestAt_ = now;
+    }
 }
 
 int App::run() {
@@ -165,14 +244,28 @@ int App::run() {
     const double startTime = GetTime();
     int frame = 0;
     while (!WindowShouldClose() && !quit_) {
-        syncWindowSize();
-        renderer_.ensureSize();
         input::beginFrame(GetTime() - startTime);
         if (input::quitRequested()) break;
+        if (input::takeOsToggle()) platform::setFullscreen(!platform::isFullscreen());
+        updateFullscreen(GetTime());
+        // Only a normal window needs re-syncing (see syncWindowSize); a
+        // fullscreen window is sized by the OS.
+        if (!platform::isFullscreen() && GetTime() - fullscreenRequestAt_ > 1.5) syncWindowSize();
+        renderer_.ensureSize();
+        const platform::Insets safe = platform::safeArea();
+        ui::setSafeInsets(safe.top, safe.left, safe.bottom, safe.right);
+        Vector2 probe{};
+        while (input::takeProbe(probe)) {
+            Vector2 got{};
+            if (platform::probeCursor(probe, got))
+                std::fprintf(stderr, "Spillway: probe cursor at (%.1f, %.1f) -> reads (%.1f, %.1f), window %dx%d, fullscreen %d\n",
+                             probe.x, probe.y, got.x, got.y, GetScreenWidth(), GetScreenHeight(), platform::isFullscreen() ? 1 : 0);
+        }
         if (pinMouse) SetMousePosition(static_cast<int>(pinned.x), static_cast<int>(pinned.y));
         const float dt = std::min(GetFrameTime(), 1.0f / 20.0f);
 
         scene_->update(dt);
+        const double renderStart = GetTime();
         scene_->prepare();
         renderer_.beginWorld();
         scene_->drawWorld();
@@ -188,6 +281,7 @@ int App::run() {
                      12.0f * s, theme::textDim);
         }
         renderer_.endUi();
+        lastRenderCpuMs_ = (GetTime() - renderStart) * 1000.0;
 
         fade_ = std::max(0.0f, fade_ - dt / 0.5f);
         renderer_.present(ease::inOutCubic(fade_));
@@ -211,6 +305,8 @@ int App::run() {
 
     scene_.reset();
     pending_.reset();
+    for (RenderTexture2D& t : thumbs_)
+        if (t.id) UnloadRenderTexture(t);
     renderer_.unload();
     assets().unload();
     CloseWindow();

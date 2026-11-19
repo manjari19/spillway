@@ -82,8 +82,9 @@ void SettingsScene::drawUi() {
     const float w = 560.0f * s;
     const Vector2 tM = measureText(FontRole::SemiBold, "Settings", theme::type::title * s);
     const float h = pad + tM.y + 22.0f * s + 5 * rowH + 16.0f * s + 48.0f * s + pad;
+    const float top = ui::safeTop();
     const Rectangle card{(static_cast<float>(GetScreenWidth()) - w) * 0.5f,
-                         (static_cast<float>(GetScreenHeight()) - h) * 0.5f + (1 - in) * 10.0f * s, w, h};
+                         top + (static_cast<float>(GetScreenHeight()) - top - h) * 0.5f + (1 - in) * 10.0f * s, w, h};
     ui::glass(card, 28.0f * s, in);
     float y = card.y + pad;
     drawText(FontRole::SemiBold, "Settings", {card.x + pad, y}, theme::type::title * s, ease::alpha(theme::text, in));
@@ -91,7 +92,7 @@ void SettingsScene::drawUi() {
 
     const char* labels[] = {"Bloom", "Water quality", "Show FPS", "Fullscreen", "Reset progress"};
     const char* hints[] = {"Glow around water and walls", "Particle count; applies to the next level you start",
-                           "Frame counter in the corner", "Borderless fullscreen window", "Clears all stars and unlocks"};
+                           "Frame counter in the corner", "Fill the display (Ctrl+Cmd+F or Alt+Enter)", "Clears all stars and unlocks"};
     const Vector2 mouse = input::mouse();
     for (int i = 0; i < 5; ++i) {
         const Rectangle row{card.x + pad * 0.5f, y, card.width - pad, rowH - 6.0f * s};

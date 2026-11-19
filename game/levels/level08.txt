@@ -1,0 +1,74 @@
+# Level 8 - Pepper Pits
+# A field of small pit pockets is buried in the dirt between the pool and the
+# drain, in staggered rows. A straight channel cuts through several of them.
+# Weave the channel through the gaps (it must keep running downhill), or seal
+# a pocket you have to cross with a short wall laid along the channel's
+# floor. Sealing costs ink, and 3 stars need at most half of it.
+
+name  Pepper Pits
+hint  Weave between the pits, or seal one with a wall. Keep flowing downhill.
+size  16 9
+win   70
+ink   2.4
+stars 84 92
+
+dirt  rect 0 0 16 9
+empty rect 0 0 16 0.7
+
+# The pool, floor tilted toward its right-hand rim.
+empty poly 0.3 0.7  3.7 0.7  3.7 2.3  0.3 1.9
+
+# The pepper field.
+empty rect 4.65 2.90 5.35 3.25
+pit   rect 4.65 2.90 5.35 3.25
+empty rect 6.85 2.90 7.55 3.25
+pit   rect 6.85 2.90 7.55 3.25
+empty rect 9.25 2.90 9.95 3.25
+pit   rect 9.25 2.90 9.95 3.25
+empty rect 5.65 4.00 6.35 4.35
+pit   rect 5.65 4.00 6.35 4.35
+empty rect 7.95 4.00 8.65 4.35
+pit   rect 7.95 4.00 8.65 4.35
+empty rect 10.35 4.00 11.05 4.35
+pit   rect 10.35 4.00 11.05 4.35
+empty rect 12.25 4.00 12.95 4.35
+pit   rect 12.25 4.00 12.95 4.35
+empty rect 4.45 5.10 5.15 5.45
+pit   rect 4.45 5.10 5.15 5.45
+empty rect 6.85 5.10 7.55 5.45
+pit   rect 6.85 5.10 7.55 5.45
+empty rect 9.05 5.10 9.75 5.45
+pit   rect 9.05 5.10 9.75 5.45
+empty rect 11.25 5.10 11.95 5.45
+pit   rect 11.25 5.10 11.95 5.45
+empty rect 13.25 5.10 13.95 5.45
+pit   rect 13.25 5.10 13.95 5.45
+empty rect 5.65 6.20 6.35 6.55
+pit   rect 5.65 6.20 6.35 6.55
+empty rect 8.05 6.20 8.75 6.55
+pit   rect 8.05 6.20 8.75 6.55
+empty rect 10.15 6.20 10.85 6.55
+pit   rect 10.15 6.20 10.85 6.55
+empty rect 12.45 6.20 13.15 6.55
+pit   rect 12.45 6.20 13.15 6.55
+empty rect 6.95 7.30 7.65 7.65
+pit   rect 6.95 7.30 7.65 7.65
+empty rect 9.25 7.30 9.95 7.65
+pit   rect 9.25 7.30 9.95 7.65
+empty rect 11.35 7.30 12.05 7.65
+pit   rect 11.35 7.30 12.05 7.65
+
+# Buried drain chamber, bottom right.
+empty rect 12.9 8.05 15.7 8.7
+
+rock  circle 8.3 5.28 0.42
+rock  circle 2.0 5.6 0.7
+rock  circle 14.4 3.0 0.55
+rock  circle 4.0 7.6 0.5
+
+rock  rect 0 0 0.3 9
+rock  rect 15.7 0 16 9
+rock  rect 0 8.7 16 9
+
+water rect 0.35 0.75 3.65 1.85
+drain rect 12.9 8.15 15.7 8.7

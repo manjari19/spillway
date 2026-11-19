@@ -56,6 +56,17 @@ inline FluidParams withParticleScale(FluidParams p, float m) {
 
 enum class NeighbourSearch { Grid, BruteForce };
 
+class ThreadPool;
+
+// Time spent in each phase of step(), summed over the steps since the last
+// reset (milliseconds). "integrate" includes the prediction pass and all
+// collision handling.
+struct StepTimings {
+    double grid = 0.0, density = 0.0, forces = 0.0, integrate = 0.0;
+    int steps = 0;
+    double total() const { return grid + density + forces + integrate; }
+};
+
 // Mouse-style interaction: pulls particles toward (strength > 0) or pushes them
 // away from (strength < 0) a point.
 struct Interaction {
@@ -105,6 +116,15 @@ public:
 
     void setInteraction(const Interaction& interaction) { interaction_ = interaction; }
 
+    // Run the per-particle passes on a thread pool (nullptr = this thread
+    // only). The pool must outlive this system. Results are bit-identical
+    // for any thread count: see thread_pool.h.
+    void setThreadPool(ThreadPool* pool) { pool_ = pool; }
+    ThreadPool* threadPool() const { return pool_; }
+
+    const StepTimings& timings() const { return timings_; }
+    void resetTimings() { timings_ = {}; }
+
     // Density at an arbitrary point using current positions (tests, debug).
     float sampleDensity(Vec2 point) const;
 
@@ -126,6 +146,9 @@ private:
 
     template <class Fn>
     void forEachNeighbourCandidate(Vec2 p, Fn&& fn) const;
+    // Runs fn(begin, end) over [0, n), split across the pool if there is one.
+    template <class Fn>
+    void forRange(size_t n, Fn&& fn);
 
     FluidParams params_;
     SmoothingKernels kernels_;
@@ -135,6 +158,8 @@ private:
     Interaction interaction_{};
     SpatialGrid grid_;
     const Terrain* terrain_ = nullptr;
+    ThreadPool* pool_ = nullptr;
+    StepTimings timings_;
 
     // Structure-of-arrays particle storage.
     std::vector<Vec2> positions_;
@@ -143,6 +168,19 @@ private:
     std::vector<Vec2> newVelocities_;
     std::vector<float> densities_;
     std::vector<float> nearDensities_;
+
+    // Grid mode: copies of what the neighbour loops read, in cell order, so
+    // each 3x3 neighbour row is one contiguous read instead of a gather
+    // through the grid's index. Same values and same order as reading
+    // through the index, so results are unchanged (see README, Data layout).
+    struct SortedParticle {
+        Vec2 pos;          // predicted position
+        Vec2 vel;          // velocity before the force pass
+        float density;
+        float nearDensity;
+        uint32_t index;    // particle index
+    };
+    std::vector<SortedParticle> sorted_;
 };
 
 } // namespace spillway

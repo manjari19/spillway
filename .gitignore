@@ -1,6 +1,18 @@
+# Build output
 build/
 build-*/
-.cache/
+out/
+bench-ci/
 compile_commands.json
+.cache/
+
+# OS and editor files
 .DS_Store
 *.swp
+.vscode/
+.idea/
+*.log
+
+# Local, per-machine settings
+.claude/settings.local.json
+*.local

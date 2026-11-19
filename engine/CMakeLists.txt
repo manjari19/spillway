@@ -11,7 +11,9 @@ add_library(spillway_engine STATIC
   src/marching_squares.cpp
   src/json.cpp
   src/progress.cpp
+  src/thread_pool.cpp
 )
 target_include_directories(spillway_engine PUBLIC include)
 target_compile_features(spillway_engine PUBLIC cxx_std_20)
-target_link_libraries(spillway_engine PRIVATE spillway_warnings)
+find_package(Threads REQUIRED)
+target_link_libraries(spillway_engine PUBLIC Threads::Threads PRIVATE spillway_warnings)

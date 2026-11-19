@@ -15,6 +15,13 @@ namespace ui {
 // UI scale relative to a 1280x720 reference, limited by the tighter axis.
 float scale();
 
+// Safe area, published by the App every frame: how far (logical px) the
+// window's edges are covered by hardware, e.g. a camera notch along the top
+// in fullscreen. Backgrounds still fill the whole window; top-anchored UI
+// starts below safeTop().
+void setSafeInsets(float top, float left, float bottom, float right);
+float safeTop();
+
 // Roundness value for raylib's rounded rectangles from a pixel radius.
 float roundness(Rectangle r, float radius);
 

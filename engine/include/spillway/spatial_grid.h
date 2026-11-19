@@ -49,6 +49,23 @@ public:
         }
     }
 
+    // Same 3x3 block, as ranges [begin, end) of positions in the sorted
+    // order (one range per row). Lets callers read per-particle data that has
+    // been copied into cell order, which is contiguous in memory.
+    template <class Fn>
+    void forEachCandidateRange(Vec2 p, Fn&& fn) const {
+        const int cx = cellX(p.x);
+        const int cy = cellY(p.y);
+        const int x0 = cx > 0 ? cx - 1 : 0;
+        const int x1 = cx < cellsX_ - 1 ? cx + 1 : cellsX_ - 1;
+        const int y0 = cy > 0 ? cy - 1 : 0;
+        const int y1 = cy < cellsY_ - 1 ? cy + 1 : cellsY_ - 1;
+        for (int y = y0; y <= y1; ++y)
+            fn(cellStart_[static_cast<size_t>(y * cellsX_ + x0)], cellStart_[static_cast<size_t>(y * cellsX_ + x1 + 1)]);
+    }
+    // Particle index at each sorted position.
+    const std::vector<uint32_t>& sortedIndex() const { return sortedIndex_; }
+
     int cellsX() const { return cellsX_; }
     int cellsY() const { return cellsY_; }
     float cellSize() const { return cellSize_; }

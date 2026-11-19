@@ -1,10 +1,13 @@
 #include "spillway/fluid.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <functional>
 
 #include "spillway/rng.h"
 #include "spillway/terrain.h"
+#include "spillway/thread_pool.h"
 
 namespace spillway {
 
@@ -87,22 +90,69 @@ void FluidSystem::forEachNeighbourCandidate(Vec2 p, Fn&& fn) const {
     }
 }
 
+template <class Fn>
+void FluidSystem::forRange(size_t n, Fn&& fn) {
+    if (pool_ && pool_->threads() > 1) pool_->parallelFor(n, std::function<void(size_t, size_t)>(fn));
+    else fn(size_t{0}, n);
+}
+
 void FluidSystem::step(float dt) {
     const size_t n = size();
     if (n == 0) return;
+    using Clock = std::chrono::steady_clock;
+    auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
 
+    // Every pass below except the grid build reads only the previous pass's
+    // arrays and writes only particle i's own entries, so it can be split
+    // across threads without locks and without changing any result.
+    const auto t0 = Clock::now();
     // 1. Apply gravity / interaction and predict where each particle is going.
-    predictRange(0, n, dt);
-    // 2. Rebuild the neighbour grid on the predicted positions.
-    if (search_ == NeighbourSearch::Grid) grid_.build(predicted_);
+    forRange(n, [&](size_t b, size_t e) { predictRange(b, e, dt); });
+    const auto t1 = Clock::now();
+    // 2. Rebuild the neighbour grid on the predicted positions (a serial
+    //    counting sort; a small part of the step), and copy positions into
+    //    cell order for the neighbour loops.
+    const bool grid = search_ == NeighbourSearch::Grid;
+    if (grid) {
+        grid_.build(predicted_);
+        sorted_.resize(n);
+        const auto& order = grid_.sortedIndex();
+        forRange(n, [&](size_t b, size_t e) {
+            for (size_t k = b; k < e; ++k) {
+                sorted_[k].index = order[k];
+                sorted_[k].pos = predicted_[order[k]];
+            }
+        });
+    }
+    const auto t2 = Clock::now();
     // 3. Density and near-density at predicted positions.
-    densityRange(0, n);
+    forRange(n, [&](size_t b, size_t e) { densityRange(b, e); });
+    if (grid) {
+        // The force pass reads neighbours' densities and velocities too.
+        forRange(n, [&](size_t b, size_t e) {
+            for (size_t k = b; k < e; ++k) {
+                const uint32_t j = sorted_[k].index;
+                sorted_[k].density = densities_[j];
+                sorted_[k].nearDensity = nearDensities_[j];
+                sorted_[k].vel = velocities_[j];
+            }
+        });
+    }
+    const auto t3 = Clock::now();
     // 4. Pressure + viscosity -> new velocities (written to a separate buffer
     //    because viscosity reads neighbours' old velocities).
-    forceRange(0, n, dt);
+    forRange(n, [&](size_t b, size_t e) { forceRange(b, e, dt); });
     velocities_.swap(newVelocities_);
-    // 5. Move particles and collide with the boundary.
-    integrateRange(0, n, dt);
+    const auto t4 = Clock::now();
+    // 5. Move particles and collide with the boundary and terrain.
+    forRange(n, [&](size_t b, size_t e) { integrateRange(b, e, dt); });
+    const auto t5 = Clock::now();
+
+    timings_.grid += ms(t1, t2);
+    timings_.density += ms(t2, t3);
+    timings_.forces += ms(t3, t4);
+    timings_.integrate += ms(t0, t1) + ms(t4, t5);
+    ++timings_.steps;
 }
 
 Vec2 FluidSystem::externalAcceleration(Vec2 position, Vec2 velocity) const {
@@ -139,13 +189,20 @@ void FluidSystem::densityRange(size_t begin, size_t end) {
         float nearDensity = 0.0f;
         // rho_i = sum_j m_j W(|x_i - x_j|). Mass is 1, and j includes i
         // itself, so density is never zero.
-        forEachNeighbourCandidate(pi, [&](uint32_t j) {
-            const float r2 = lengthSq(predicted_[j] - pi);
+        auto add = [&](Vec2 pj) {
+            const float r2 = lengthSq(pj - pi);
             if (r2 >= h2) return;
             const float r = std::sqrt(r2);
             density += kernels_.spikyPow2(r);
             nearDensity += kernels_.spikyPow3(r);
-        });
+        };
+        if (search_ == NeighbourSearch::Grid) {
+            grid_.forEachCandidateRange(pi, [&](uint32_t b, uint32_t e) {
+                for (uint32_t k = b; k < e; ++k) add(sorted_[k].pos);
+            });
+        } else {
+            forEachNeighbourCandidate(pi, [&](uint32_t j) { add(predicted_[j]); });
+        }
         densities_[i] = density;
         nearDensities_[i] = nearDensity;
     }
@@ -167,9 +224,9 @@ void FluidSystem::forceRange(size_t begin, size_t end, float dt) {
         Vec2 pressureForce{};
         Vec2 viscosityForce{};
 
-        forEachNeighbourCandidate(pi, [&](uint32_t j) {
+        auto add = [&](uint32_t j, Vec2 pjPos, Vec2 vj, float rhoJ, float nearJ) {
             if (j == i) return;
-            const Vec2 offset = predicted_[j] - pi;
+            const Vec2 offset = pjPos - pi;
             const float r2 = lengthSq(offset);
             if (r2 >= h2) return;
             const float r = std::sqrt(r2);
@@ -181,20 +238,32 @@ void FluidSystem::forceRange(size_t begin, size_t end, float dt) {
             // Pressure force: -grad P. Using the *average* pressure of i and j
             // makes the force on i from j equal and opposite to the force on j
             // from i (Newton's third law), so momentum is conserved.
-            const float pj = k * (densities_[j] - rho0);
-            const float pjNear = kNear * nearDensities_[j];
+            const float pj = k * (rhoJ - rho0);
+            const float pjNear = kNear * nearJ;
             const float sharedPressure = 0.5f * (pressure + pj);
             const float sharedNear = 0.5f * (nearPressure + pjNear);
             // The kernel derivative is negative, so positive pressure pushes
             // i away from j (along -dir).
-            pressureForce += dir * (kernels_.spikyPow2Derivative(r) * sharedPressure / densities_[j]);
-            pressureForce += dir * (kernels_.spikyPow3Derivative(r) * sharedNear / nearDensities_[j]);
+            pressureForce += dir * (kernels_.spikyPow2Derivative(r) * sharedPressure / rhoJ);
+            pressureForce += dir * (kernels_.spikyPow3Derivative(r) * sharedNear / nearJ);
 
             // Viscosity: nudge v_i toward its neighbours' velocities,
             // weighted by a smooth kernel. Damps jitter and gives the fluid
             // a slightly thick, cohesive look.
-            viscosityForce += (velocities_[j] - vi) * kernels_.poly6(r2);
-        });
+            viscosityForce += (vj - vi) * kernels_.poly6(r2);
+        };
+        if (search_ == NeighbourSearch::Grid) {
+            grid_.forEachCandidateRange(pi, [&](uint32_t b, uint32_t e) {
+                for (uint32_t q = b; q < e; ++q) {
+                    const SortedParticle& sp = sorted_[q];
+                    add(sp.index, sp.pos, sp.vel, sp.density, sp.nearDensity);
+                }
+            });
+        } else {
+            forEachNeighbourCandidate(pi, [&](uint32_t j) {
+                add(j, predicted_[j], velocities_[j], densities_[j], nearDensities_[j]);
+            });
+        }
 
         // F = m a with "mass density": a = F / rho.
         const Vec2 accel = pressureForce / densities_[i] + viscosityForce * params_.viscosityStrength;

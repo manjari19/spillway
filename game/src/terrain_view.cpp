@@ -170,6 +170,6 @@ void TerrainView::draw(const Renderer& renderer, const View& view, const Terrain
     SetShaderValueTexture(ts.shader, ts.dugTime, dugTex_);
     const Texture2D& t = target_.texture;
     DrawTexturePro(t, {0, 0, static_cast<float>(t.width), -static_cast<float>(t.height)},
-                   {0, 0, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())}, {0, 0}, 0.0f, WHITE);
+                   {0, 0, renderer.logicalWidth(), renderer.logicalHeight()}, {0, 0}, 0.0f, WHITE);
     EndShaderMode();
 }

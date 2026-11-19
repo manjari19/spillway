@@ -16,6 +16,7 @@
 
 #include <raylib.h>
 
+#include <functional>
 #include <span>
 
 #include "spillway/vec2.h"
@@ -36,6 +37,10 @@ public:
     float dpi() const { return dpi_; }
     int renderWidth() const { return rw_; }
     int renderHeight() const { return rh_; }
+    // Size of the layer being drawn, in logical pixels. This is the window
+    // normally, and the target's own size inside renderOffscreen().
+    float logicalWidth() const { return static_cast<float>(rw_) / dpi_; }
+    float logicalHeight() const { return static_cast<float>(rh_) / dpi_; }
 
     void beginWorld();
     void endWorld(bool wantBackdrop);
@@ -58,6 +63,15 @@ public:
     // default would make translucent UI punch holes in an opaque target).
     static void blendNormal();
     static void blendAdditive();
+
+    // Runs the whole world pipeline (background, whatever drawWorld draws,
+    // bloom and composite) into `dst` at its own size, at 1 logical pixel per
+    // texel. Used for level thumbnails, so they are drawn by exactly the same
+    // code and shaders as the game. `prepare` runs first, with the swapped
+    // size active but no layer bound (like Scene::prepare). Call outside
+    // beginWorld/endWorld.
+    void renderOffscreen(RenderTexture2D& dst, const std::function<void()>& prepare,
+                         const std::function<void()>& drawWorld);
 
     Image screenshot() const;
     // The water field drawn by the last drawWater() call (for water-lit terrain).

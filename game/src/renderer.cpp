@@ -129,8 +129,8 @@ void Renderer::unbindLayer(bool logical) {
 
 void Renderer::beginWorld() {
     bindLayer(scene_, true);
-    const int sw = GetScreenWidth(), sh = GetScreenHeight();
-    DrawRectangleGradientV(0, 0, sw, sh, theme::bgTop, theme::bgBottom);
+    DrawRectangleGradientV(0, 0, static_cast<int>(std::ceil(logicalWidth())), static_cast<int>(std::ceil(logicalHeight())),
+                           theme::bgTop, theme::bgBottom);
 }
 
 void Renderer::blit(const Texture2D& src, RenderTexture2D& dst, Shader* shader) {
@@ -265,10 +265,44 @@ void Renderer::drawWater(std::span<const spillway::Vec2> pos, std::span<const sp
     setVec3(ws.shader, ws.slowColor, theme::waterSlow);
     setVec3(ws.shader, ws.fastColor, theme::waterFast);
     BeginShaderMode(ws.shader);
-    DrawTexturePro(blob_.texture, flipped(blob_.texture),
-                   {0, 0, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())}, {0, 0}, 0.0f, WHITE);
+    DrawTexturePro(blob_.texture, flipped(blob_.texture), {0, 0, logicalWidth(), logicalHeight()}, {0, 0}, 0.0f, WHITE);
     EndShaderMode();
     // Leave the scene layer bound, as the caller expects.
+}
+
+void Renderer::renderOffscreen(RenderTexture2D& dst, const std::function<void()>& prepare,
+                               const std::function<void()>& drawWorld) {
+    // Swap in targets of the thumbnail's size, run the normal world
+    // pipeline with `dst` as the frame, then put everything back.
+    const int savedW = rw_, savedH = rh_;
+    const float savedDpi = dpi_;
+    const RenderTexture2D savedScene = scene_, savedFrame = frame_, savedBlob = blob_, savedA = bloomA_, savedB = bloomB_;
+    const bool savedBackdrop = haveBackdrop_;
+
+    rw_ = dst.texture.width;
+    rh_ = dst.texture.height;
+    dpi_ = 1.0f;
+    scene_ = loadTarget(rw_, rh_);
+    blob_ = loadFloatTarget(rw_, rh_);
+    bloomA_ = loadTarget(rw_ / 2, rh_ / 2);
+    bloomB_ = loadTarget(rw_ / 2, rh_ / 2);
+    frame_ = dst;
+
+    prepare();
+    beginWorld();
+    drawWorld();
+    endWorld(false);
+
+    for (RenderTexture2D* t : {&scene_, &blob_, &bloomA_, &bloomB_}) unloadTarget(*t);
+    rw_ = savedW;
+    rh_ = savedH;
+    dpi_ = savedDpi;
+    scene_ = savedScene;
+    frame_ = savedFrame;
+    blob_ = savedBlob;
+    bloomA_ = savedA;
+    bloomB_ = savedB;
+    haveBackdrop_ = savedBackdrop;
 }
 
 Image Renderer::screenshot() const {

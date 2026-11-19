@@ -18,6 +18,18 @@ float scale() {
     return std::max(0.6f, std::min(sx, sy));
 }
 
+namespace {
+float gSafeTop = 0.0f, gSafeLeft = 0.0f, gSafeBottom = 0.0f, gSafeRight = 0.0f;
+} // namespace
+
+void setSafeInsets(float top, float left, float bottom, float right) {
+    gSafeTop = top;
+    gSafeLeft = left;
+    gSafeBottom = bottom;
+    gSafeRight = right;
+}
+float safeTop() { return gSafeTop; }
+
 float roundness(Rectangle r, float radius) {
     const float m = std::min(r.width, r.height);
     return m > 0.0f ? std::clamp(2.0f * radius / m, 0.0f, 1.0f) : 0.0f;
